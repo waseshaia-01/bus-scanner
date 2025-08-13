@@ -24,10 +24,20 @@
             color: white;
             padding: 5px;
             border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        ul { list-style: none; padding: 0; }
+        ul { list-style: none; padding: 0; margin-top: 5px; }
         li { padding: 5px; border-bottom: 1px solid #ddd; }
         .time { color: gray; font-size: 12px; }
+        .count-badge {
+            background: orange;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -57,7 +67,7 @@
         function createBusSection(busName) {
             const div = document.createElement('div');
             div.className = 'bus';
-            div.innerHTML = `<h2>${busName}</h2><ul id="${busName}List"></ul>`;
+            div.innerHTML = `<h2>${busName} <span class="count-badge" id="${busName}Count">0</span></h2><ul id="${busName}List"></ul>`;
             busContainer.appendChild(div);
         }
 
@@ -65,23 +75,39 @@
         for (let i = 1; i <= 12; i++) {
             const busName = `Bus${i}`;
             createBusSection(busName);
-            buses[busName] = document.getElementById(`${busName}List`);
+            buses[busName] = {
+                list: document.getElementById(`${busName}List`),
+                count: document.getElementById(`${busName}Count`)
+            };
         }
 
         // Listen for Firestore changes
         db.collection("scans").orderBy("time", "desc").onSnapshot(snapshot => {
-            // Clear current lists
+            // Reset counts and lists
             for (let bus in buses) {
-                buses[bus].innerHTML = "";
+                buses[bus].list.innerHTML = "";
+                buses[bus].count.innerText = "0";
             }
+
+            const counts = {};
+
             snapshot.forEach(doc => {
                 const data = doc.data();
                 if (buses[data.bus]) {
+                    // Count passengers
+                    counts[data.bus] = (counts[data.bus] || 0) + 1;
+
+                    // Add list item
                     const li = document.createElement('li');
                     li.innerHTML = `<strong>${data.code}</strong> <div class="time">${new Date(data.time).toLocaleTimeString()}</div>`;
-                    buses[data.bus].appendChild(li);
+                    buses[data.bus].list.appendChild(li);
                 }
             });
+
+            // Update counts
+            for (let bus in counts) {
+                buses[bus].count.innerText = counts[bus];
+            }
         });
     </script>
 </body>
