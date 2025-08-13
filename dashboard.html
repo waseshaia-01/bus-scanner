@@ -98,7 +98,8 @@
                 if (buses[data.bus]) {
                     counts[data.bus] = (counts[data.bus] || 0) + 1;
                     const li = document.createElement('li');
-                    li.innerHTML = `<strong>${data.name}</strong> <div class="time">${new Date(data.time).toLocaleTimeString()}</div>`;
+                    li.innerHTML = `<strong>${data.name}</strong>      
+                        <div class="time">${new Date(data.time).toLocaleString()}</div>`;
                     buses[data.bus].list.appendChild(li);
                 }
             });
@@ -136,3 +137,4 @@
     </script>
 </body>
 </html>
+
