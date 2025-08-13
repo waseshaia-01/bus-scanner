@@ -61,7 +61,7 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
 
     <script>
-        // Your Firebase config
+        // Firebase config
         const firebaseConfig = {
             apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
             authDomain: "bus-monitor-7195d.firebaseapp.com",
@@ -71,11 +71,9 @@
             appId: "1:827570613765:web:5ed5f2635174e3379f366c"
         };
 
-        // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // Enable offline persistence
         db.enablePersistence()
           .catch(err => {
               if (err.code == 'failed-precondition') {
@@ -95,7 +93,6 @@
                 return;
             }
 
-            // Check if this QR code has already been scanned for the same bus
             db.collection("scans")
               .where("bus", "==", bus)
               .where("code", "==", qrMessage)
@@ -106,7 +103,6 @@
                       return;
                   }
 
-                  // Save new scan (works offline too, will sync later)
                   db.collection("scans").add({
                       bus: bus,
                       code: qrMessage,
@@ -127,9 +123,19 @@
             logScan(decodedText);
         }
 
-        const html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 10, qrbox: 250 });
-        html5QrcodeScanner.render(onScanSuccess);
+        // Start scanner with back camera only
+        const html5QrCode = new Html5Qrcode("reader");
+
+        html5QrCode.start(
+            { facingMode: { exact: "environment" } },
+            { fps: 10, qrbox: 250 },
+            onScanSuccess,
+            (errorMessage) => {
+                // Ignore scan errors
+            }
+        ).catch(err => {
+            console.error("Unable to start scanning:", err);
+        });
     </script>
 
     <!-- Service Worker Registration -->
