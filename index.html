@@ -75,6 +75,16 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
+        // Enable offline persistence
+        db.enablePersistence()
+          .catch(err => {
+              if (err.code == 'failed-precondition') {
+                  console.warn("⚠️ Persistence failed - multiple tabs open");
+              } else if (err.code == 'unimplemented') {
+                  console.warn("⚠️ Persistence not available in this browser");
+              }
+          });
+
         const busSelect = document.getElementById("busSelect");
         const statusDiv = document.getElementById("status");
 
@@ -96,7 +106,7 @@
                       return;
                   }
 
-                  // Save new scan
+                  // Save new scan (works offline too, will sync later)
                   db.collection("scans").add({
                       bus: bus,
                       code: qrMessage,
