@@ -1,11 +1,13 @@
 {
   "name": "Bus QR Scanner",
   "short_name": "BusScanner",
-  "start_url": "index.html",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#007bff",
   "description": "QR code scanner for bus boarding monitoring",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "icons/icon-192.png",
