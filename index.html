@@ -79,15 +79,33 @@
                 alert("Please select a bus first!");
                 return;
             }
-            db.collection("scans").add({
-                bus: bus,
-                code: qrMessage,
-                time: new Date().toISOString()
-            }).then(() => {
-                statusDiv.innerText = "✅ Saved: " + qrMessage + " to " + bus;
-            }).catch(err => {
-                statusDiv.innerText = "❌ Error: " + err;
-            });
+
+            // Check if this QR code has already been scanned for the same bus
+            db.collection("scans")
+              .where("bus", "==", bus)
+              .where("code", "==", qrMessage)
+              .get()
+              .then(snapshot => {
+                  if (!snapshot.empty) {
+                      statusDiv.innerText = "⚠️ This QR code has already been scanned for " + bus;
+                      return;
+                  }
+
+                  // Save new scan
+                  db.collection("scans").add({
+                      bus: bus,
+                      code: qrMessage,
+                      time: new Date().toISOString()
+                  }).then(() => {
+                      statusDiv.innerText = "✅ Saved: " + qrMessage + " to " + bus;
+                  }).catch(err => {
+                      statusDiv.innerText = "❌ Error: " + err;
+                  });
+              })
+              .catch(err => {
+                  console.error("Error checking duplicates: ", err);
+                  statusDiv.innerText = "❌ Error checking duplicates: " + err;
+              });
         }
 
         function onScanSuccess(decodedText) {
