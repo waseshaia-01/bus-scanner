@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bus Scanner Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { text-align: center; }
+        .bus-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .bus {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 10px;
+            background-color: #f9f9f9;
+        }
+        .bus h2 {
+            margin-top: 0;
+            font-size: 18px;
+            background: #333;
+            color: white;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        ul { list-style: none; padding: 0; }
+        li { padding: 5px; border-bottom: 1px solid #ddd; }
+        .time { color: gray; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>🚌 Bus Boarding Dashboard</h1>
+    <div class="bus-container" id="busContainer"></div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <script>
+        // Your Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
+            authDomain: "bus-monitor-7195d.firebaseapp.com",
+            projectId: "bus-monitor-7195d",
+            storageBucket: "bus-monitor-7195d.firebasestorage.app",
+            messagingSenderId: "827570613765",
+            appId: "1:827570613765:web:5ed5f2635174e3379f366c"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        const busContainer = document.getElementById('busContainer');
+        const buses = {};
+
+        function createBusSection(busName) {
+            const div = document.createElement('div');
+            div.className = 'bus';
+            div.innerHTML = `<h2>${busName}</h2><ul id="${busName}List"></ul>`;
+            busContainer.appendChild(div);
+        }
+
+        // Create sections for Bus1–Bus12
+        for (let i = 1; i <= 12; i++) {
+            const busName = `Bus${i}`;
+            createBusSection(busName);
+            buses[busName] = document.getElementById(`${busName}List`);
+        }
+
+        // Listen for Firestore changes
+        db.collection("scans").orderBy("time", "desc").onSnapshot(snapshot => {
+            // Clear current lists
+            for (let bus in buses) {
+                buses[bus].innerHTML = "";
+            }
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (buses[data.bus]) {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<strong>${data.code}</strong> <div class="time">${new Date(data.time).toLocaleTimeString()}</div>`;
+                    buses[data.bus].appendChild(li);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
