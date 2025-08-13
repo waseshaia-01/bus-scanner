@@ -12,7 +12,11 @@
             display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
         }
-        .bus { border: 1px solid #ccc; border-radius: 8px; padding: 10px; background-color: #f9f9f9; }
+        .bus {
+            border: 1px solid #ccc; border-radius: 8px; padding: 10px;
+            background-color: #f9f9f9; cursor: pointer; transition: background 0.2s;
+        }
+        .bus:hover { background-color: #e9e9e9; }
         .bus h2 {
             margin-top: 0; font-size: 18px; background: #333; color: white;
             padding: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;
@@ -25,6 +29,7 @@
         }
         .back-btn { background-color: #28a745; color: white; padding: 10px 15px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px; }
         .back-btn:hover { background-color: #1e7e34; }
+        input[type="file"] { display: none; }
     </style>
 </head>
 <body>
@@ -33,9 +38,8 @@
     </div>
     <h1>🚌 Bus Boarding Dashboard</h1>
 
-    <!-- Excel Upload -->
+    <!-- Hidden file input for uploads -->
     <input type="file" id="excelFile" accept=".xlsx, .xls" />
-    <button onclick="uploadExcel()">📤 Upload Passenger List</button>
 
     <div class="bus-container" id="busContainer"></div>
 
@@ -57,11 +61,19 @@
 
         const busContainer = document.getElementById('busContainer');
         const buses = {};
+        let selectedBus = null; // track which bus was clicked
 
         function createBusSection(busName) {
             const div = document.createElement('div');
             div.className = 'bus';
             div.innerHTML = `<h2>${busName} <span class="count-badge" id="${busName}Count">0</span></h2><ul id="${busName}List"></ul>`;
+            
+            // Click event for uploading list to this bus
+            div.addEventListener('click', () => {
+                selectedBus = busName;
+                document.getElementById('excelFile').click();
+            });
+
             busContainer.appendChild(div);
         }
 
@@ -74,7 +86,7 @@
             };
         }
 
-        // Display scans with names
+        // Display scans
         db.collection("scans").orderBy("time", "desc").onSnapshot(snapshot => {
             for (let bus in buses) {
                 buses[bus].list.innerHTML = "";
@@ -95,34 +107,32 @@
             }
         });
 
-        // Excel Upload
-        function uploadExcel() {
-            const fileInput = document.getElementById('excelFile');
-            const file = fileInput.files[0];
-            if (!file) {
-                alert("Please select an Excel file.");
-                return;
-            }
+        // Upload passenger list for the selected bus
+        document.getElementById('excelFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file || !selectedBus) return;
+
             const reader = new FileReader();
-            reader.onload = function(e) {
-                const data = new Uint8Array(e.target.result);
+            reader.onload = function(ev) {
+                const data = new Uint8Array(ev.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
                 const sheetName = workbook.SheetNames[0];
                 const sheet = workbook.Sheets[sheetName];
                 const passengers = XLSX.utils.sheet_to_json(sheet);
 
                 passengers.forEach(p => {
-                    if (p.code && p.name && p.bus) {
+                    if (p.code && p.name) {
                         db.collection("passengers").doc(p.code).set({
                             name: p.name,
-                            bus: p.bus
+                            bus: selectedBus
                         });
                     }
                 });
-                alert("Passenger list uploaded successfully!");
+                alert(`Passenger list for ${selectedBus} uploaded successfully!`);
+                e.target.value = ""; // reset file input
             };
             reader.readAsArrayBuffer(file);
-        }
+        });
     </script>
 </body>
 </html>
