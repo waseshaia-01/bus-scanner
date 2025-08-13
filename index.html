@@ -3,35 +3,24 @@
 <head>
     <title>Bus QR Scanner</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-
-    <!-- PWA Manifest and Theme Color -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#007bff">
-
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; text-align: center; }
         #reader { width: 100%; max-width: 400px; margin: auto; }
         select, button { padding: 10px; margin: 5px 0; width: 100%; font-size: 16px; }
-        #status { margin-top: 10px; font-weight: bold; color: green; }
+        #status { margin-top: 10px; font-weight: bold; }
         .dashboard-btn {
             background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
+            color: white; border: none;
+            border-radius: 5px; cursor: pointer;
         }
-        .dashboard-btn:hover {
-            background-color: #0056b3;
-        }
+        .dashboard-btn:hover { background-color: #0056b3; }
     </style>
 </head>
 <body>
     <h2>Bus QR Scanner</h2>
-
-    <!-- Dashboard Button -->
-    <button class="dashboard-btn" onclick="window.location.href='dashboard.html'">
-        📊 View Bus Dashboard
-    </button>
+    <button class="dashboard-btn" onclick="window.location.href='dashboard.html'">📊 View Bus Dashboard</button>
 
     <label for="busSelect">Select Bus:</label>
     <select id="busSelect">
@@ -53,11 +42,8 @@
     <div id="reader"></div>
     <div id="status"></div>
 
-    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-
-    <!-- QR Scanner Library -->
     <script src="https://unpkg.com/html5-qrcode"></script>
 
     <script>
@@ -70,84 +56,75 @@
             messagingSenderId: "827570613765",
             appId: "1:827570613765:web:5ed5f2635174e3379f366c"
         };
-
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
-
-        db.enablePersistence()
-          .catch(err => {
-              if (err.code == 'failed-precondition') {
-                  console.warn("⚠️ Persistence failed - multiple tabs open");
-              } else if (err.code == 'unimplemented') {
-                  console.warn("⚠️ Persistence not available in this browser");
-              }
-          });
 
         const busSelect = document.getElementById("busSelect");
         const statusDiv = document.getElementById("status");
 
-        function logScan(qrMessage) {
+        async function logScan(qrMessage) {
             const bus = busSelect.value;
             if (!bus) {
                 alert("Please select a bus first!");
                 return;
             }
 
-            db.collection("scans")
-              .where("bus", "==", bus)
-              .where("code", "==", qrMessage)
-              .get()
-              .then(snapshot => {
-                  if (!snapshot.empty) {
-                      statusDiv.innerText = "⚠️ This QR code has already been scanned for " + bus;
-                      return;
-                  }
+            try {
+                // Check passenger assignment
+                const passengerRef = await db.collection("passengers").doc(qrMessage).get();
+                if (!passengerRef.exists) {
+                    statusDiv.style.color = "red";
+                    statusDiv.innerText = "❌ Passenger not registered.";
+                    return;
+                }
+                const passenger = passengerRef.data();
 
-                  db.collection("scans").add({
-                      bus: bus,
-                      code: qrMessage,
-                      time: new Date().toISOString()
-                  }).then(() => {
-                      statusDiv.innerText = "✅ Saved: " + qrMessage + " to " + bus;
-                  }).catch(err => {
-                      statusDiv.innerText = "❌ Error: " + err;
-                  });
-              })
-              .catch(err => {
-                  console.error("Error checking duplicates: ", err);
-                  statusDiv.innerText = "❌ Error checking duplicates: " + err;
-              });
+                if (passenger.bus !== bus) {
+                    statusDiv.style.color = "red";
+                    statusDiv.innerText = `❌ ${passenger.name} is assigned to ${passenger.bus}, not ${bus}.`;
+                    return;
+                }
+
+                // Check if already scanned for this bus
+                const existingScan = await db.collection("scans")
+                    .where("bus", "==", bus)
+                    .where("code", "==", qrMessage)
+                    .get();
+
+                if (!existingScan.empty) {
+                    statusDiv.style.color = "orange";
+                    statusDiv.innerText = `⚠️ ${passenger.name} already scanned for ${bus}.`;
+                    return;
+                }
+
+                // Save scan
+                await db.collection("scans").add({
+                    bus,
+                    code: qrMessage,
+                    name: passenger.name,
+                    time: new Date().toISOString()
+                });
+
+                statusDiv.style.color = "green";
+                statusDiv.innerText = `✅ ${passenger.name} boarded ${bus}`;
+            } catch (err) {
+                statusDiv.style.color = "red";
+                statusDiv.innerText = "❌ Error: " + err.message;
+            }
         }
 
         function onScanSuccess(decodedText) {
             logScan(decodedText);
         }
 
-        // Start scanner with back camera only
         const html5QrCode = new Html5Qrcode("reader");
-
         html5QrCode.start(
-            { facingMode: { exact: "environment" } },
+            { facingMode: "environment" },
             { fps: 10, qrbox: 250 },
-            onScanSuccess,
-            (errorMessage) => {
-                // Ignore scan errors
-            }
+            onScanSuccess
         ).catch(err => {
             console.error("Unable to start scanning:", err);
         });
-    </script>
-
-    <!-- Service Worker Registration -->
-    <script>
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker
-          .register("./service-worker.js", { scope: "./" })
-          .then(reg => console.log("SW registered:", reg.scope))
-          .catch(err => console.log("SW registration failed:", err));
-      });
-    }
     </script>
 </body>
 </html>
