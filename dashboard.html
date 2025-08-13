@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
-        h1 { text-align: center; }
+        h1 { text-align: center; margin-top: 0; }
         .bus-container {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -38,6 +38,7 @@
             border-radius: 12px;
             font-size: 14px;
         }
+        /* Back button style */
         .back-btn {
             background-color: #28a745;
             color: white;
@@ -46,8 +47,7 @@
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            display: block;
-            margin: 0 auto 15px auto;
+            margin-bottom: 10px;
         }
         .back-btn:hover {
             background-color: #1e7e34;
@@ -55,12 +55,14 @@
     </style>
 </head>
 <body>
-    <h1>🚌 Bus Boarding Dashboard</h1>
 
-    <!-- Back to Scanner Button -->
-    <button class="back-btn" onclick="window.location.href='index.html'">
-        🔙 Back to Scanner
-    </button>
+    <!-- Back button aligned to top-left -->
+    <div style="text-align: left; margin-bottom: 5px;">
+        <button class="back-btn" onclick="window.location.href='index.html'">🔙</button>
+    </div>
+
+    <!-- Dashboard Title -->
+    <h1>🚌 Bus Boarding Dashboard</h1>
 
     <div class="bus-container" id="busContainer"></div>
 
