@@ -3,80 +3,47 @@
 <head>
     <title>Bus Scanner Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-
-    <!-- PWA Manifest and Theme Color -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#007bff">
-
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
-        h1 { text-align: center; margin-top: 0; }
+        h1 { text-align: center; }
         .bus-container {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
         }
-        .bus {
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            padding: 10px;
-            background-color: #f9f9f9;
-        }
+        .bus { border: 1px solid #ccc; border-radius: 8px; padding: 10px; background-color: #f9f9f9; }
         .bus h2 {
-            margin-top: 0;
-            font-size: 18px;
-            background: #333;
-            color: white;
-            padding: 5px;
-            border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            margin-top: 0; font-size: 18px; background: #333; color: white;
+            padding: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;
         }
         ul { list-style: none; padding: 0; margin-top: 5px; }
         li { padding: 5px; border-bottom: 1px solid #ddd; }
         .time { color: gray; font-size: 12px; }
         .count-badge {
-            background: orange;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 14px;
+            background: orange; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;
         }
-        /* Back button style */
-        .back-btn {
-            background-color: #28a745;
-            color: white;
-            padding: 10px 15px;
-            font-size: 16px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-bottom: 10px;
-        }
-        .back-btn:hover {
-            background-color: #1e7e34;
-        }
+        .back-btn { background-color: #28a745; color: white; padding: 10px 15px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px; }
+        .back-btn:hover { background-color: #1e7e34; }
     </style>
 </head>
 <body>
-
-    <!-- Back button aligned to top-left -->
-    <div style="text-align: left; margin-bottom: 5px;">
+    <div style="text-align: left;">
         <button class="back-btn" onclick="window.location.href='index.html'">🔙</button>
     </div>
-
-    <!-- Dashboard Title -->
     <h1>🚌 Bus Boarding Dashboard</h1>
+
+    <!-- Excel Upload -->
+    <input type="file" id="excelFile" accept=".xlsx, .xls" />
+    <button onclick="uploadExcel()">📤 Upload Passenger List</button>
 
     <div class="bus-container" id="busContainer"></div>
 
-    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <script>
-        // Firebase config
         const firebaseConfig = {
             apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
             authDomain: "bus-monitor-7195d.firebaseapp.com",
@@ -88,16 +55,6 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // Enable offline persistence
-        db.enablePersistence()
-          .catch(err => {
-              if (err.code === 'failed-precondition') {
-                  console.warn("⚠️ Persistence failed - multiple tabs open");
-              } else if (err.code === 'unimplemented') {
-                  console.warn("⚠️ Persistence not available in this browser");
-              }
-          });
-
         const busContainer = document.getElementById('busContainer');
         const buses = {};
 
@@ -108,7 +65,6 @@
             busContainer.appendChild(div);
         }
 
-        // Create sections for Bus1–Bus12
         for (let i = 1; i <= 12; i++) {
             const busName = `Bus${i}`;
             createBusSection(busName);
@@ -118,47 +74,55 @@
             };
         }
 
-        // Listen for Firestore changes
+        // Display scans with names
         db.collection("scans").orderBy("time", "desc").onSnapshot(snapshot => {
-            // Reset counts and lists
             for (let bus in buses) {
                 buses[bus].list.innerHTML = "";
                 buses[bus].count.innerText = "0";
             }
-
             const counts = {};
-
             snapshot.forEach(doc => {
                 const data = doc.data();
                 if (buses[data.bus]) {
-                    // Count passengers
                     counts[data.bus] = (counts[data.bus] || 0) + 1;
-
-                    // Add list item
                     const li = document.createElement('li');
-                    li.innerHTML = `<strong>${data.code}</strong> <div class="time">${new Date(data.time).toLocaleTimeString()}</div>`;
+                    li.innerHTML = `<strong>${data.name}</strong> <div class="time">${new Date(data.time).toLocaleTimeString()}</div>`;
                     buses[data.bus].list.appendChild(li);
                 }
             });
-
-            // Update counts
             for (let bus in counts) {
                 buses[bus].count.innerText = counts[bus];
             }
         });
-    </script>
 
-    <!-- Service Worker Registration -->
-    <script>
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker
-          .register("./service-worker.js", { scope: "./" })
-          .then(reg => console.log("SW registered:", reg.scope))
-          .catch(err => console.log("SW registration failed:", err));
-      });
-    }
-    </script>
+        // Excel Upload
+        function uploadExcel() {
+            const fileInput = document.getElementById('excelFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert("Please select an Excel file.");
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const passengers = XLSX.utils.sheet_to_json(sheet);
 
+                passengers.forEach(p => {
+                    if (p.code && p.name && p.bus) {
+                        db.collection("passengers").doc(p.code).set({
+                            name: p.name,
+                            bus: p.bus
+                        });
+                    }
+                });
+                alert("Passenger list uploaded successfully!");
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    </script>
 </body>
 </html>
