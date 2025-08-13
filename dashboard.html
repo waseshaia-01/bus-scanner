@@ -38,10 +38,30 @@
             border-radius: 12px;
             font-size: 14px;
         }
+        .back-btn {
+            background-color: #28a745;
+            color: white;
+            padding: 10px 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            display: block;
+            margin: 0 auto 15px auto;
+        }
+        .back-btn:hover {
+            background-color: #1e7e34;
+        }
     </style>
 </head>
 <body>
     <h1>🚌 Bus Boarding Dashboard</h1>
+
+    <!-- Back to Scanner Button -->
+    <button class="back-btn" onclick="window.location.href='index.html'">
+        🔙 Back to Scanner
+    </button>
+
     <div class="bus-container" id="busContainer"></div>
 
     <!-- Firebase SDK -->
