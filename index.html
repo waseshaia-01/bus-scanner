@@ -8,10 +8,25 @@
         #reader { width: 100%; max-width: 400px; margin: auto; }
         select, button { padding: 10px; margin: 5px 0; width: 100%; font-size: 16px; }
         #status { margin-top: 10px; font-weight: bold; color: green; }
+        .dashboard-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .dashboard-btn:hover {
+            background-color: #0056b3;
+        }
     </style>
 </head>
 <body>
     <h2>Bus QR Scanner</h2>
+
+    <!-- Dashboard Button -->
+    <button class="dashboard-btn" onclick="window.location.href='dashboard.html'">
+        📊 View Bus Dashboard
+    </button>
 
     <label for="busSelect">Select Bus:</label>
     <select id="busSelect">
