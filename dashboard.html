@@ -3,6 +3,11 @@
 <head>
     <title>Bus Scanner Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- PWA Manifest and Theme Color -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007bff">
+
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         h1 { text-align: center; margin-top: 0; }
@@ -71,7 +76,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
     <script>
-        // Your Firebase config
+        // Firebase config
         const firebaseConfig = {
             apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
             authDomain: "bus-monitor-7195d.firebaseapp.com",
@@ -82,6 +87,16 @@
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
+
+        // Enable offline persistence
+        db.enablePersistence()
+          .catch(err => {
+              if (err.code === 'failed-precondition') {
+                  console.warn("⚠️ Persistence failed - multiple tabs open");
+              } else if (err.code === 'unimplemented') {
+                  console.warn("⚠️ Persistence not available in this browser");
+              }
+          });
 
         const busContainer = document.getElementById('busContainer');
         const buses = {};
@@ -132,5 +147,18 @@
             }
         });
     </script>
+
+    <!-- Service Worker Registration -->
+    <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker
+          .register("./service-worker.js", { scope: "./" })
+          .then(reg => console.log("SW registered:", reg.scope))
+          .catch(err => console.log("SW registration failed:", err));
+      });
+    }
+    </script>
+
 </body>
 </html>
