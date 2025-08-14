@@ -70,24 +70,24 @@
             }
 
             try {
-                // Check passenger assignment
-                const passengerRef = await db.collection("passengers").doc(qrMessage).get();
+                // Check if passenger exists under this bus
+                const passengerRef = await db
+                    .collection("buses").doc(bus)
+                    .collection("passengers").doc(qrMessage)
+                    .get();
+
                 if (!passengerRef.exists) {
                     statusDiv.style.color = "red";
-                    statusDiv.innerText = "❌ Passenger not registered.";
+                    statusDiv.innerText = "❌ Passenger not registered for " + bus;
                     return;
                 }
+
                 const passenger = passengerRef.data();
 
-                if (passenger.bus !== bus) {
-                    statusDiv.style.color = "red";
-                    statusDiv.innerText = `❌ ${passenger.name} is assigned to ${passenger.bus}, not ${bus}.`;
-                    return;
-                }
-
                 // Check if already scanned for this bus
-                const existingScan = await db.collection("scans")
-                    .where("bus", "==", bus)
+                const existingScan = await db
+                    .collection("buses").doc(bus)
+                    .collection("scans")
                     .where("code", "==", qrMessage)
                     .get();
 
@@ -98,12 +98,12 @@
                 }
 
                 // Save scan
-                await db.collection("scans").add({
-                    bus,
-                    code: qrMessage,
-                    name: passenger.name,
-                    time: new Date().toISOString()
-                });
+                await db.collection("buses").doc(bus)
+                    .collection("scans").add({
+                        code: qrMessage,
+                        name: passenger.name,
+                        time: new Date().toISOString()
+                    });
 
                 statusDiv.style.color = "green";
                 statusDiv.innerText = `✅ ${passenger.name} boarded ${bus}`;
