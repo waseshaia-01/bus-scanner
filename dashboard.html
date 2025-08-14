@@ -1,0 +1,420 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Bus Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0d6efd" />
+  <style>
+    :root { --gap: 14px; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 16px; background:#f7f7fb; color:#111; }
+    h1 { text-align:center; margin: 0 0 12px; }
+    .topbar { display:flex; gap:var(--gap); justify-content:center; align-items:center; flex-wrap:wrap; margin-bottom: 14px; }
+    select, input[type=file], button, textarea { padding:10px 12px; border-radius:12px; border:1px solid #d0d0e0; background:#fff; }
+    button { cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    button.primary { background:#0d6efd; color:#fff; border-color:#0d6efd; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--gap); }
+    .tile { background:#fff; border:1px solid #e7e7f0; border-radius:16px; padding:14px; box-shadow:0 2px 8px rgba(0,0,0,.04); cursor:pointer; }
+    .tile.open { outline: 2px solid #0d6efd33; }
+    .tile h3 { margin:0 0 6px; }
+    .muted { color:#666; font-size:13px; }
+    .panel { display:none; background:#fff; border:1px solid #e7e7f0; border-radius:16px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+    .panel.open { display:block; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .between { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    table { width:100%; border-collapse: collapse; font-size:14px; background:#fff; }
+    th, td { padding:8px; border-bottom:1px dashed #eee; text-align:left; }
+    tr:last-child td { border-bottom:none; }
+    .search { width: 260px; }
+    .danger { background:#ef4444; color:#fff; border-color:#ef4444; }
+    .warn { background:#f59e0b; color:#fff; border-color:#f59e0b; }
+    .success { color:#138a36; }
+    .err { color:#b00020; }
+  </style>
+</head>
+<body>
+  <h1>🧭 Bus Dashboard</h1>
+  <div class="topbar">
+    <button id="toScanner">Back to Scanner</button>
+    <button id="downloadTemplate">Download Template (CSV)</button>
+    <button id="exportData">Export Data (JSON)</button>
+    <input type="file" id="importData" accept=".json" />
+    <button id="clearAll" class="danger">Clear All Data</button>
+    <span id="status" class="muted"></span>
+  </div>
+
+  <div class="grid" id="busGrid"></div>
+  <div id="busPanels"></div>
+
+  <!-- Libs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <script>
+    // ---- PWA registration ----
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(console.warn);
+      });
+    }
+
+    // ---- Data helpers ----
+    const KEY = 'busqr:data:v1';
+    function loadData() {
+      try { return JSON.parse(localStorage.getItem(KEY)) || { buses: {} }; }
+      catch { return { buses: {} }; }
+    }
+    function saveData(d) { localStorage.setItem(KEY, JSON.stringify(d)); }
+    function ensureBuses(d) {
+      for (let i=1;i<=12;i++) {
+        const id = 'Bus' + String(i).padStart(2,'0');
+        if (!d.buses[id]) d.buses[id] = { attendees: [] };
+      }
+    }
+    function summarize(bus) {
+      const list = (bus.attendees||[]);
+      const boarded = list.filter(x => !!x.boardedAt).length;
+      return { total: list.length, boarded, remaining: Math.max(0, list.length - boarded) };
+    }
+    function csvToRows(text) {
+      // Simple CSV (Code,Name)
+      return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+        const parts = l.split(',');
+        return { code: (parts[0]||'').trim(), name: (parts[1]||'').trim() };
+      });
+    }
+
+    // ---- UI refs ----
+    const toScanner = document.getElementById('toScanner');
+    const downloadTemplate = document.getElementById('downloadTemplate');
+    const exportData = document.getElementById('exportData');
+    const importData = document.getElementById('importData');
+    const clearAll = document.getElementById('clearAll');
+    const statusEl = document.getElementById('status');
+    const busGrid = document.getElementById('busGrid');
+    const busPanels = document.getElementById('busPanels');
+
+    toScanner.onclick = () => location.href = 'index.html';
+    function setStatus(t, cls) {
+      statusEl.className = 'muted ' + (cls||'');
+      statusEl.textContent = t || '';
+    }
+
+    // Build grid and panels
+    function buildUI() {
+      const d = loadData(); ensureBuses(d);
+      busGrid.innerHTML = '';
+      busPanels.innerHTML = '';
+
+      Object.keys(d.buses).forEach(id => {
+        const stats = summarize(d.buses[id]);
+        const tile = document.createElement('div');
+        tile.className = 'tile';
+        tile.dataset.bus = id;
+        tile.innerHTML = `<h3>${id.replace('Bus','Bus ')}</h3>
+          <div class="muted">Total: ${stats.total} • Boarded: ${stats.boarded} • Remaining: ${stats.remaining}</div>`;
+        busGrid.appendChild(tile);
+
+        const panel = document.createElement('div');
+        panel.className = 'panel';
+        panel.id = 'panel-' + id;
+        panel.innerHTML = `
+          <div class="between">
+            <h3 style="margin:0">${id.replace('Bus','Bus ')} — Attendees</h3>
+            <input type="text" class="search" id="search-${id}" placeholder="Search name or code" />
+          </div>
+          <div class="row" style="margin:10px 0">
+            <input type="file" id="file-${id}" accept=".csv,.txt" />
+            <button class="primary" id="import-${id}">Import CSV</button>
+            <button id="qrzip-${id}">QR CODE DOWNLOAD (ZIP)</button>
+            <button id="pdf-${id}">Download Event Pass PDF</button>
+            <button class="warn" id="deleteAll-${id}">DELETE ALL</button>
+          </div>
+          <div class="muted">CSV format: <code>Code,Name</code></div>
+          <table>
+            <thead><tr><th style="width:20%">Code</th><th style="width:50%">Name</th><th style="width:20%">Boarded At</th><th style="width:10%">Action</th></tr></thead>
+            <tbody id="tbody-${id}"></tbody>
+          </table>
+        `;
+        busPanels.appendChild(panel);
+
+        // Expand/collapse behavior
+        tile.addEventListener('click', () => togglePanel(id));
+      });
+
+      // Wire per-bus controls
+      Object.keys(d.buses).forEach(id => {
+        document.getElementById('import-' + id).onclick = () => importCSV(id);
+        document.getElementById('qrzip-' + id).onclick = () => downloadQRs(id);
+        document.getElementById('pdf-' + id).onclick = () => downloadPassPDF(id);
+        document.getElementById('deleteAll-' + id).onclick = () => deleteAll(id);
+        document.getElementById('search-' + id).addEventListener('input', () => renderTable(id));
+      });
+
+      // Initially none open
+      setOpen(null);
+    }
+
+    function setOpen(busId) {
+      // Close all
+      document.querySelectorAll('.tile').forEach(t => t.classList.remove('open'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('open'));
+      if (!busId) return;
+      document.querySelector('.tile[data-bus="'+busId+'"]')?.classList.add('open');
+      document.getElementById('panel-' + busId)?.classList.add('open');
+      renderTable(busId);
+    }
+
+    function togglePanel(busId) {
+      const panel = document.getElementById('panel-' + busId);
+      const isOpen = panel.classList.contains('open');
+      if (isOpen) {
+        setOpen(null); // collapse
+      } else {
+        setOpen(busId); // open and collapse others
+      }
+    }
+
+    function renderTable(busId) {
+      const d = loadData(); ensureBuses(d);
+      const list = (d.buses[busId].attendees || []);
+      const q = (document.getElementById('search-' + busId).value || '').toLowerCase();
+      const tbody = document.getElementById('tbody-' + busId);
+      tbody.innerHTML = '';
+      list
+        .filter(a => !q || String(a.code).toLowerCase().includes(q) || String(a.name).toLowerCase().includes(q))
+        .sort((a,b) => String(a.name).localeCompare(String(b.name)))
+        .forEach(a => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${a.code}</td>
+            <td>${a.name}</td>
+            <td>${a.boardedAt ? new Date(a.boardedAt).toLocaleString() : ''}</td>
+            <td><button data-code="${a.code}" class="danger del">Delete</button></td>`;
+          tbody.appendChild(tr);
+        });
+      // Wire delete buttons
+      tbody.querySelectorAll('button.del').forEach(btn => {
+        btn.addEventListener('click', () => deleteOne(busId, btn.dataset.code));
+      });
+    }
+
+    function importCSV(busId) {
+      const input = document.getElementById('file-' + busId);
+      const file = input.files && input.files[0];
+      if (!file) { setStatus('Choose a CSV file first', 'err'); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const rows = csvToRows(reader.result);
+        if (!rows.length) { setStatus('No rows found in CSV', 'err'); return; }
+        const d = loadData(); ensureBuses(d);
+        const map = new Map((d.buses[busId].attendees || []).map(a => [String(a.code).trim(), a]));
+        rows.forEach(r => {
+          if (!r.code) return;
+          const key = String(r.code).trim();
+          if (map.has(key)) {
+            // update name, keep boardedAt
+            map.get(key).name = r.name || map.get(key).name;
+          } else {
+            map.set(key, { code: key, name: r.name || '', boardedAt: null });
+          }
+        });
+        d.buses[busId].attendees = Array.from(map.values());
+        saveData(d);
+        setStatus('Imported ' + rows.length + ' rows into ' + busId, 'success');
+        renderTable(busId);
+        buildUI(); // refresh grid counts
+      };
+      reader.readAsText(file);
+    }
+
+    function deleteOne(busId, code) {
+      const d = loadData(); ensureBuses(d);
+      d.buses[busId].attendees = (d.buses[busId].attendees || []).filter(a => String(a.code).trim() !== String(code).trim());
+      saveData(d);
+      setStatus('Deleted ' + code + ' from ' + busId, 'warn');
+      renderTable(busId);
+      buildUI();
+    }
+
+    function deleteAll(busId) {
+      if (!confirm('Delete ALL attendees in ' + busId + '?')) return;
+      const d = loadData(); ensureBuses(d);
+      d.buses[busId].attendees = [];
+      saveData(d);
+      setStatus('Cleared ' + busId, 'warn');
+      renderTable(busId);
+      buildUI();
+    }
+
+    // Template CSV
+    document.getElementById('downloadTemplate').onclick = () => {
+      const csv = 'Code,Name\nTCI001,John Doe\nTCI002,Jane Smith\n';
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      saveAs(blob, 'attendees_template.csv');
+    };
+
+    // Export/Import full JSON
+    document.getElementById('exportData').onclick = () => {
+      const blob = new Blob([JSON.stringify(loadData(), null, 2)], { type: 'application/json' });
+      saveAs(blob, 'busqr_data.json');
+    };
+    document.getElementById('importData').addEventListener('change', (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          const obj = JSON.parse(r.result);
+          if (!obj || typeof obj !== 'object') throw new Error('Invalid JSON');
+          localStorage.setItem(KEY, JSON.stringify(obj));
+          setStatus('Data imported successfully', 'success');
+          buildUI();
+        } catch (err) {
+          setStatus('Import failed: ' + err.message, 'err');
+        }
+      };
+      r.readAsText(file);
+    });
+
+    // Clear all data
+    document.getElementById('clearAll').onclick = () => {
+      if (!confirm('This will erase ALL buses and attendees. Continue?')) return;
+      localStorage.removeItem(KEY);
+      setStatus('All data cleared', 'warn');
+      buildUI();
+    };
+
+    // ---- QR ZIP (256px, H) ----
+    async function downloadQRs(busId) {
+      const d = loadData(); ensureBuses(d);
+      const list = (d.buses[busId].attendees || []);
+      if (!list.length) { setStatus('No attendees to export for ' + busId, 'err'); return; }
+
+      const zip = new JSZip();
+      const temp = document.createElement('div');
+      temp.style.position='fixed'; temp.style.left='-9999px'; document.body.appendChild(temp);
+
+      function makePng(text) {
+        return new Promise(resolve => {
+          const holder = document.createElement('div');
+          temp.appendChild(holder);
+          const q = new QRCode(holder, { text, width:256, height:256, correctLevel: QRCode.CorrectLevel.H });
+          setTimeout(() => {
+            const canvas = holder.querySelector('canvas');
+            const dataUrl = canvas.toDataURL('image/png');
+            resolve(dataUrl);
+          }, 120);
+        });
+      }
+
+      for (const a of list) {
+        const dataUrl = await makePng(a.code);
+        const base64 = dataUrl.split(',')[1];
+        const safe = (a.name || 'Unknown').replace(/[^a-z0-9_\- ]/gi, '_');
+        zip.file(`${a.code} - ${safe}.png`, base64, { base64: true });
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      saveAs(blob, `QRs_${busId}.zip`);
+      temp.remove();
+      setStatus('QR ZIP generated for ' + busId, 'success');
+    }
+
+    // ---- Event Pass PDF (A4, 6 per page, each 5cm x 10cm) ----
+    async function downloadPassPDF(busId) {
+      const d = loadData(); ensureBuses(d);
+      const list = (d.buses[busId].attendees || []);
+      if (!list.length) { setStatus('No attendees to export for ' + busId, 'err'); return; }
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: 'cm', format: 'a4', orientation: 'portrait' });
+      const pageW = 21.0, pageH = 29.7;
+      const margin = 0.5;
+      const cardW = 5.0, cardH = 10.0;
+      // 2 columns x 3 rows
+      const cols = 2, rows = 3;
+      const xPositions = [margin, margin + cardW + (pageW - 2*margin - 2*cardW)]; // distribute
+      const yPositions = [margin, margin + cardH + 0.5, margin + 2*cardH + 1.0];   // 0.5cm spacing vertically
+
+      // Helper: render a single pass to canvas then to image
+      function renderPassToCanvas(a) {
+        const scale = 37.7952755906; // px per cm ~96dpi
+        const W = Math.round(cardW * scale);
+        const H = Math.round(cardH * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = H;
+        const ctx = canvas.getContext('2d');
+
+        // Background
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,W,H);
+        ctx.strokeStyle = '#e5e7eb'; ctx.strokeRect(0,0,W,H);
+
+        // Header: Company
+        ctx.fillStyle = '#0b2d6b';
+        ctx.font = 'bold 20px Georgia, serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('TSUNETETSU CEBU INC.', W/2, 28);
+
+        // QR
+        const qrSizeCm = 4.5, qrSizePx = Math.round(qrSizeCm * scale);
+        const qrX = Math.round((W - qrSizePx) / 2);
+        const qrY = 40;
+
+        const holder = document.createElement('div');
+        new QRCode(holder, { text: a.code, width: qrSizePx, height: qrSizePx, correctLevel: QRCode.CorrectLevel.H });
+        const img = holder.querySelector('canvas');
+        ctx.drawImage(img, qrX, qrY, qrSizePx, qrSizePx);
+
+        // Name
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 18px system-ui, Arial';
+        ctx.fillText(a.name || '', W/2, qrY + qrSizePx + 28);
+
+        // EVENT
+        ctx.font = 'bold 16px system-ui, Arial';
+        ctx.fillText('TCI Family Day 2025', W/2, qrY + qrSizePx + 52);
+        ctx.font = '14px system-ui, Arial';
+        ctx.fillText('September 7, 2025 | 8:00 AM – 4:00 PM', W/2, qrY + qrSizePx + 72);
+
+        // VENUE
+        ctx.font = 'bold 16px system-ui, Arial';
+        ctx.fillText('Hidden Valley Mountain and Wavepool Resort', W/2, qrY + qrSizePx + 96);
+        ctx.font = '12px system-ui, Arial';
+        ctx.fillText('Pinamungahan, Cebu', W/2, qrY + qrSizePx + 114);
+
+        // Footer: EVENT PASS
+        ctx.font = 'bold 16px system-ui, Arial';
+        ctx.fillText('EVENT PASS', W/2, H - 18);
+
+        return canvas;
+      }
+
+      let i = 0;
+      for (const a of list) {
+        const col = i % cols;
+        const row = Math.floor((i % (cols * rows)) / cols);
+        const x = xPositions[col];
+        const y = yPositions[row];
+        const canvas = renderPassToCanvas(a);
+        const dataUrl = canvas.toDataURL('imagePNG');
+        pdf.addImage(dataUrl, 'PNG', x, y, cardW, cardH);
+        i++;
+        if (i % (cols * rows) === 0 && i < list.length) {
+          pdf.addPage();
+        }
+      }
+
+      pdf.save(`EventPasses_${busId}.pdf`);
+      setStatus('Event Pass PDF generated for ' + busId, 'success');
+    }
+
+    // Build initial UI
+    buildUI();
+  </script>
+</body>
+</html>

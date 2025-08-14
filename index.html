@@ -1,0 +1,181 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Bus QR Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0d6efd" />
+  <style>
+    :root { --gap: 12px; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; margin: 16px; background:#f7f7fb; color:#111; }
+    h1 { text-align:center; margin: 0 0 12px; }
+    .toolbar { display:flex; gap:var(--gap); justify-content:center; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+    select, button { padding:10px 12px; border-radius:12px; border:1px solid #d0d0e0; background:#fff; }
+    button { cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    button.primary { background:#0d6efd; color:#fff; border-color:#0d6efd; }
+    #reader { width: 100%; max-width: 420px; margin: 0 auto 12px; background:#000; border-radius: 16px; overflow:hidden; }
+    .status { text-align:center; min-height: 28px; font-weight:600; }
+    .status.ok { color:#138a36; }
+    .status.warn { color:#b35c00; }
+    .status.err { color:#b00020; }
+    .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--gap); }
+    .card { background:#fff; border:1px solid #e7e7f0; border-radius:16px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+    .row { display:flex; justify-content:space-between; gap:8px; border-bottom:1px dashed #eee; padding:8px 0; font-size:14px; }
+    .row:last-child { border-bottom:none; }
+    .muted { color:#666; font-size:13px; }
+  </style>
+</head>
+<body>
+  <h1>🚌 Bus QR Scanner</h1>
+
+  <div class="toolbar">
+    <label for="bus"><strong>Bus:</strong></label>
+    <select id="bus"></select>
+    <button id="toDashboard">View Dashboard</button>
+    <button id="resetBoarded" title="Reset boarded for this bus only">Reset Boarded</button>
+  </div>
+
+  <div id="reader"></div>
+  <div class="status" id="status">Ready</div>
+
+  <div class="cards">
+    <div class="card">
+      <h3 style="margin-top:0">Recent scans</h3>
+      <div id="log"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Bus stats</h3>
+      <div class="row"><span>Total attendees</span><strong id="totalAttendees">0</strong></div>
+      <div class="row"><span>Boarded</span><strong id="boardedCount">0</strong></div>
+      <div class="row"><span>Remaining</span><strong id="remainingCount">0</strong></div>
+      <div class="muted">Tip: Import attendees in the Dashboard first.</div>
+    </div>
+  </div>
+
+  <!-- Libs -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <script>
+    // ---- PWA registration ----
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(console.warn);
+      });
+    }
+
+    // ---- Data helpers (localStorage) ----
+    const KEY = 'busqr:data:v1';
+    function loadData() {
+      try { return JSON.parse(localStorage.getItem(KEY)) || { buses: {} }; }
+      catch { return { buses: {} }; }
+    }
+    function saveData(d) { localStorage.setItem(KEY, JSON.stringify(d)); }
+    function ensureBuses(d) {
+      for (let i=1;i<=12;i++) {
+        const id = 'Bus' + String(i).padStart(2,'0');
+        if (!d.buses[id]) d.buses[id] = { attendees: [] };
+      }
+    }
+    function findByCode(arr, code) {
+      const c = String(code).trim();
+      return arr.find(x => String(x.code).trim() === c);
+    }
+
+    // ---- UI refs ----
+    const busSel = document.getElementById('bus');
+    const toDashboard = document.getElementById('toDashboard');
+    const resetBoardedBtn = document.getElementById('resetBoarded');
+    const statusDiv = document.getElementById('status');
+    const logDiv = document.getElementById('log');
+    const totalAttendees = document.getElementById('totalAttendees');
+    const boardedCount = document.getElementById('boardedCount');
+    const remainingCount = document.getElementById('remainingCount');
+
+    toDashboard.onclick = () => location.href = 'dashboard.html';
+
+    // Populate buses
+    (function initBuses() {
+      const d = loadData(); ensureBuses(d);
+      busSel.innerHTML = Object.keys(d.buses).map(id => `<option value="${id}">${id.replace('Bus','Bus ')}</option>`).join('');
+    })();
+
+    function refreshStats() {
+      const d = loadData(); ensureBuses(d);
+      const bus = busSel.value;
+      const list = d.buses[bus].attendees || [];
+      const boarded = list.filter(x => !!x.boardedAt).length;
+      totalAttendees.textContent = list.length;
+      boardedCount.textContent = boarded;
+      remainingCount.textContent = Math.max(0, list.length - boarded);
+    }
+
+    busSel.addEventListener('change', refreshStats);
+    resetBoardedBtn.addEventListener('click', () => {
+      const d = loadData(); ensureBuses(d);
+      const bus = busSel.value;
+      d.buses[bus].attendees = (d.buses[bus].attendees || []).map(a => ({...a, boardedAt: null}));
+      saveData(d);
+      status('Boarded flags reset for ' + bus, 'ok');
+      refreshStats();
+    });
+
+    function status(text, cls) {
+      statusDiv.className = 'status ' + (cls || '');
+      statusDiv.textContent = text;
+    }
+    function logLine(text) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<span>${new Date().toLocaleTimeString()}</span><span>${text}</span>`;
+      logDiv.prepend(row);
+    }
+
+    async function markBoarding(bus, qrText) {
+      const d = loadData(); ensureBuses(d);
+      const list = d.buses[bus].attendees || [];
+      const rec = findByCode(list, qrText);
+      if (!rec) {
+        status('❌ Not in uploaded list', 'err');
+        logLine('Unknown: ' + qrText);
+        return;
+      }
+      if (rec.boardedAt) {
+        status('⚠️ Already boarded', 'warn');
+        logLine('Duplicate: ' + rec.name + ' (' + rec.code + ')');
+        return;
+      }
+      rec.boardedAt = new Date().toISOString();
+      saveData(d);
+      status('✅ Boarded: ' + (rec.name || 'Passenger'), 'ok');
+      logLine('Boarded: ' + (rec.name || 'Passenger') + ' (' + rec.code + ')');
+      refreshStats();
+    }
+
+    function onScanSuccess(decodedText) {
+      const bus = busSel.value;
+      const qrText = (decodedText || '').trim();
+      if (!qrText) return;
+      markBoarding(bus, qrText);
+    }
+
+    function startScanner() {
+      const html5QrCode = new Html5Qrcode("reader");
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 320 },
+        onScanSuccess
+      ).catch(err => {
+        status('Camera error: ' + (err && err.message ? err.message : err), 'err');
+        console.error(err);
+      });
+    }
+
+    // Init
+    refreshStats();
+    startScanner();
+  </script>
+</body>
+</html>
