@@ -1,297 +1,363 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Bus Scanner Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#007bff">
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1 { text-align: center; }
-        #topBar { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
-        .toggle-btn { background:#6c757d; color:#fff; padding:8px 12px; border:none; border-radius:6px; cursor:pointer; }
-        .bus-container {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-        }
-        .bus {
-            border: 1px solid #ccc; border-radius: 8px; padding: 10px;
-            background-color: #f9f9f9; transition: background 0.2s;
-        }
-        .bus:hover { background-color: #e9e9e9; }
-        .bus h2 {
-            margin: 0 0 6px 0; font-size: 18px; background: #333; color: white;
-            padding: 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; cursor:pointer;
-        }
-        ul { list-style: none; padding: 0; margin-top: 5px; }
-        li { padding: 5px; border-bottom: 1px solid #ddd; }
-        .time { color: gray; font-size: 12px; }
-        .count-badge {
-            background: orange; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;
-        }
-        .back-btn { background-color: #28a745; color: white; padding: 10px 15px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; }
-        .back-btn:hover { background-color: #1e7e34; }
-        input[type="file"] { display: none; }
-        .panel { display:none; margin-top: 8px; }
-        .controls { display:flex; gap:8px; margin-bottom:8px; }
-        .action-btn { background:#007bff; color:#fff; padding:8px 12px; border:none; border-radius:6px; cursor:pointer; }
-        .action-btn.orange { background:#f39c12; }
-        /* Hidden scratch area for QR canvas generation */
-        #qrScratch { position: absolute; left:-10000px; top:-10000px; width:0; height:0; overflow:hidden; }
-    </style>
+  <title>Bus Scanner Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#007bff">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { text-align: center; }
+    #topBar { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+    .toggle-btn, .action-btn, .back-btn, .template-btn {
+      background:#007bff; color:#fff; padding:8px 12px; border:none; border-radius:6px; cursor:pointer;
+    }
+    .toggle-btn { background:#6c757d; }
+    .back-btn { background:#28a745; }
+    .back-btn:hover { background:#1e7e34; }
+    .template-btn { background:#0d6efd; }
+    .bus-container {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+    }
+    .bus {
+      border: 1px solid #ccc; border-radius: 8px; padding: 10px;
+      background-color: #f9f9f9; transition: background 0.2s;
+    }
+    .bus:hover { background-color: #f2f2f2; }
+    .bus h2 {
+      margin: 0 0 6px 0; font-size: 18px; background: #333; color: white;
+      padding: 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; cursor:pointer;
+    }
+    .count-badge {
+      background: orange; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;
+    }
+    .panel { display:none; margin-top: 8px; }
+    .controls { display:flex; gap:8px; margin-bottom:8px; flex-wrap: wrap; }
+    .action-btn.orange { background:#f39c12; }
+    .meta { font-size:12px; color:#555; margin-bottom:6px; }
+    ul { list-style: none; padding: 0; margin-top: 5px; }
+    li { padding: 6px 4px; border-bottom: 1px solid #ddd; }
+    .time { color: gray; font-size: 12px; }
+    input[type="file"] { display: none; }
+    /* hidden scratch area for QR canvas */
+    #qrScratch { position: absolute; left:-10000px; top:-10000px; width:0; height:0; overflow:hidden; }
+  </style>
 </head>
 <body>
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <button class="back-btn" onclick="window.location.href='index.html'">🔙</button>
-        <h1 style="flex:1; text-align:center;">🚌 Bus Boarding Dashboard</h1>
-        <div style="width:64px;"></div>
-    </div>
+  <!-- Top header with Back + Title -->
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <button class="back-btn" onclick="window.location.href='index.html'">🔙</button>
+    <h1 style="flex:1; text-align:center;">🚌 Bus Boarding Dashboard</h1>
+    <div style="width:64px;"></div>
+  </div>
 
-    <div id="topBar">
-        <button id="toggleAllBtn" class="toggle-btn">Expand All</button>
-    </div>
+  <!-- Upper left controls -->
+  <div id="topBar">
+    <button id="toggleAllBtn" class="toggle-btn">Expand All</button>
+    <button id="downloadTemplateBtn" class="template-btn">📥 Download Attendee Template</button>
+  </div>
 
-    <!-- Hidden file input for uploads -->
-    <input type="file" id="excelFile" accept=".xlsx, .xls" />
+  <!-- Hidden file input for uploads -->
+  <input type="file" id="excelFile" accept=".xlsx, .xls" />
 
-    <div class="bus-container" id="busContainer"></div>
+  <!-- Bus cards -->
+  <div class="bus-container" id="busContainer"></div>
 
-    <!-- Hidden scratch container used for QR image generation -->
-    <div id="qrScratch" aria-hidden="true"></div>
+  <!-- Hidden scratch container used for QR image generation -->
+  <div id="qrScratch" aria-hidden="true"></div>
 
-    <!-- Firebase (Compat to match your existing code) -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    <!-- XLSX for Excel uploads (kept from your code) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <!-- QRCode.js and jsPDF for PDF with QR images -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- Firebase (Compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <!-- XLSX for Excel uploads + template generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- QRCode.js and jsPDF for PDF with QR images -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <script>
-        // ---- YOUR ORIGINAL FIREBASE CONFIG (unchanged) ----
-        const firebaseConfig = {
-            apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
-            authDomain: "bus-monitor-7195d.firebaseapp.com",
-            projectId: "bus-monitor-7195d",
-            storageBucket: "bus-monitor-7195d.firebasestorage.app",
-            messagingSenderId: "827570613765",
-            appId: "1:827570613765:web:5ed5f2635174e3379f366c"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+  <script>
+    /* ========= Firebase ========= */
+    const firebaseConfig = {
+      apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
+      authDomain: "bus-monitor-7195d.firebaseapp.com",
+      projectId: "bus-monitor-7195d",
+      storageBucket: "bus-monitor-7195d.firebasestorage.app",
+      messagingSenderId: "827570613765",
+      appId: "1:827570613765:web:5ed5f2635174e3379f366c"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-        const busContainer = document.getElementById('busContainer');
-        const buses = {};
-        const TOTAL_BUSES = 12;
-        let selectedBus = null; // used by Upload
+    const TOTAL_BUSES = 12;
+    const busContainer = document.getElementById('busContainer');
+    const buses = {}; // per-bus refs + subscriptions
+    let selectedBusForUpload = null;
+    let allExpanded = false;
 
-        // ---- Build each bus card (keeps your list + adds panel/controls) ----
-        function createBusSection(busName) {
-            const div = document.createElement('div');
-            div.className = 'bus';
-            div.innerHTML = `
-                <h2 data-bus="${busName}">
-                    ${busName}
-                    <span class="count-badge" id="${busName}Count">0</span>
-                </h2>
-                <div class="panel" id="${busName}Panel">
-                    <div class="controls">
-                        <button class="action-btn orange" data-generate="${busName}">📄 Generate QR Codes (PDF)</button>
-                        <button class="action-btn" data-upload="${busName}">📤 Upload List</button>
-                    </div>
-                    <ul id="${busName}List"></ul>
-                </div>
-            `;
-            busContainer.appendChild(div);
+    /* ========= Build Bus Cards ========= */
+    function createBusSection(busName) {
+      const div = document.createElement('div');
+      div.className = 'bus';
+      div.innerHTML = `
+        <h2 data-bus="${busName}">
+          ${busName}
+          <span class="count-badge" id="${busName}Count">0</span>
+        </h2>
+        <div class="panel" id="${busName}Panel">
+          <div class="meta" id="${busName}Meta">Current list: <em>—</em></div>
+          <div class="controls">
+            <button class="action-btn" data-upload="${busName}">📤 Upload List</button>
+            <button class="action-btn orange" data-generate="${busName}">📄 Generate QR Codes (PDF)</button>
+          </div>
+          <ul id="${busName}List"></ul>
+        </div>
+      `;
+      busContainer.appendChild(div);
 
-            // Click header to toggle (accordion)
-            const header = div.querySelector('h2');
-            header.addEventListener('click', () => toggleBusPanel(busName));
+      // Toggle accordion
+      const header = div.querySelector('h2');
+      header.addEventListener('click', () => toggleBusPanel(busName));
 
-            // Upload button (reuses your original upload flow)
-            div.querySelector(`[data-upload="${busName}"]`).addEventListener('click', () => {
-                selectedBus = busName;
-                document.getElementById('excelFile').click();
-            });
+      // Upload button
+      div.querySelector(`[data-upload="${busName}"]`).addEventListener('click', () => {
+        selectedBusForUpload = busName;
+        document.getElementById('excelFile').click();
+      });
 
-            // Generate PDF button
-            div.querySelector(`[data-generate="${busName}"]`).addEventListener('click', () => {
-                generatePdfForBus(busName);
-            });
+      // Generate PDF button
+      div.querySelector(`[data-generate="${busName}"]`).addEventListener('click', () => {
+        generatePdfForBus(busName);
+      });
 
-            // Store references (same as your original)
-            buses[busName] = {
-                list: div.querySelector(`#${busName}List`),
-                count: div.querySelector(`#${busName}Count`),
-                panel: div.querySelector(`#${busName}Panel`)
-            };
-        }
+      // Store refs
+      buses[busName] = {
+        listEl: div.querySelector(`#${busName}List`),
+        countEl: div.querySelector(`#${busName}Count`),
+        panelEl: div.querySelector(`#${busName}Panel`),
+        metaEl: div.querySelector(`#${busName}Meta`),
+        unsubScans: null,
+        unsubMeta: null
+      };
 
-        // ---- Accordion toggle logic ----
-        let allExpanded = false;
-        function toggleBusPanel(busName) {
-            const panel = document.getElementById(`${busName}Panel`);
-            const isOpen = panel.style.display === 'block';
-            // Close all
-            document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
-            // Toggle selected
-            panel.style.display = isOpen ? 'none' : 'block';
-        }
+      // Live subscriptions
+      subscribeBusMeta(busName);
+      subscribeBusScans(busName);
+    }
 
-        // ---- Expand/Collapse All button ----
-        const toggleAllBtn = document.getElementById('toggleAllBtn');
-        toggleAllBtn.addEventListener('click', () => {
-            allExpanded = !allExpanded;
-            document.querySelectorAll('.panel').forEach(p => p.style.display = allExpanded ? 'block' : 'none');
-            toggleAllBtn.textContent = allExpanded ? 'Collapse All' : 'Expand All';
+    // Create 12 bus cards
+    for (let i = 1; i <= TOTAL_BUSES; i++) createBusSection(`Bus${i}`);
+
+    /* ========= Accordion controls ========= */
+    function toggleBusPanel(busName) {
+      const panel = document.getElementById(`${busName}Panel`);
+      const isOpen = panel.style.display === 'block';
+      document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
+      panel.style.display = isOpen ? 'none' : 'block';
+    }
+
+    const toggleAllBtn = document.getElementById('toggleAllBtn');
+    toggleAllBtn.addEventListener('click', () => {
+      allExpanded = !allExpanded;
+      document.querySelectorAll('.panel').forEach(p => p.style.display = allExpanded ? 'block' : 'none');
+      toggleAllBtn.textContent = allExpanded ? 'Collapse All' : 'Expand All';
+    });
+
+    /* ========= Live: List Name (bus doc) ========= */
+    function subscribeBusMeta(busName) {
+      const busDocRef = db.collection('buses').doc(busName);
+      buses[busName].unsubMeta = busDocRef.onSnapshot(snap => {
+        const meta = snap.data() || {};
+        const listName = meta.listName || '—';
+        buses[busName].metaEl.innerHTML = `Current list: <strong>${listName}</strong>`;
+      });
+    }
+
+    /* ========= Live: Scans list per bus (ascending time: first scanned first) ========= */
+    function subscribeBusScans(busName) {
+      const scansRef = db.collection('buses').doc(busName).collection('scans');
+      // To ensure earliest-first order, store time as ISO string and orderBy 'time'
+      buses[busName].unsubScans = scansRef.orderBy('time', 'asc').onSnapshot(snap => {
+        const listEl = buses[busName].listEl;
+        const countEl = buses[busName].countEl;
+        listEl.innerHTML = '';
+        let count = 0;
+
+        snap.forEach(doc => {
+          const d = doc.data();
+          count++;
+          const li = document.createElement('li');
+          const ts = d.time ? new Date(d.time).toLocaleString() : '';
+          li.innerHTML = `<strong>${d.name || d.code || ''}</strong>
+                          ${ts ? `<div class="time">${ts}</div>` : ''}`;
+          listEl.appendChild(li);
         });
 
-        // ---- Create 12 buses ----
-        for (let i = 1; i <= TOTAL_BUSES; i++) {
-            createBusSection(`Bus${i}`);
+        countEl.textContent = String(count);
+      });
+    }
+
+    /* ========= Upload Excel: replace passengers under buses/{bus}/passengers ========= */
+    document.getElementById('excelFile').addEventListener('change', async function(e) {
+      const file = e.target.files[0];
+      if (!file || !selectedBusForUpload) return;
+
+      try {
+        // Parse Excel
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet);
+
+        // Normalize to {code, name}
+        const incoming = rows.map(r => ({
+          code: (r.code || r.CODE || r.Code || '').toString().trim(),
+          name: (r.name || r.NAME || r.Name || '').toString().trim()
+        })).filter(x => x.code && x.name);
+
+        // Replace passengers subcollection: delete old then add new
+        await replacePassengers(selectedBusForUpload, incoming);
+
+        // Save listName on bus doc
+        await db.collection('buses').doc(selectedBusForUpload).set({
+          listName: file.name,
+          lastUploadedAt: new Date().toISOString()
+        }, { merge: true });
+
+        alert(`✅ Uploaded ${incoming.length} attendees for ${selectedBusForUpload}`);
+      } catch (err) {
+        console.error(err);
+        alert('❌ Upload failed: ' + err.message);
+      } finally {
+        e.target.value = ''; // reset
+        selectedBusForUpload = null;
+      }
+    });
+
+    async function replacePassengers(busName, list) {
+      const busRef = db.collection('buses').doc(busName);
+      const passRef = busRef.collection('passengers');
+
+      // Delete existing passengers in batches
+      const existing = await passRef.get();
+      const batchSize = existing.size;
+      if (batchSize > 0) {
+        const batch = db.batch();
+        existing.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+      }
+
+      // Add new passengers (code is doc ID)
+      const batches = [];
+      let batch = db.batch();
+      let opCount = 0;
+      for (const p of list) {
+        const ref = passRef.doc(p.code);
+        batch.set(ref, { code: p.code, name: p.name });
+        opCount++;
+        if (opCount === 450) { // keep a safe margin
+          batches.push(batch.commit());
+          batch = db.batch();
+          opCount = 0;
+        }
+      }
+      batches.push(batch.commit());
+      await Promise.all(batches);
+    }
+
+    /* ========= Generate QR Codes PDF: 6 per A4 page from buses/{bus}/passengers ========= */
+    async function generatePdfForBus(busName) {
+      try {
+        const passSnap = await db.collection('buses').doc(busName).collection('passengers').get();
+        if (passSnap.empty) {
+          alert(`No passengers found for ${busName}.`);
+          return;
         }
 
-        // ---- Display scans (your original logic, unchanged) ----
-        db.collection("scans").orderBy("time", "desc").onSnapshot(snapshot => {
-            // Reset lists & counts
-            for (let bus in buses) {
-                buses[bus].list.innerHTML = "";
-                buses[bus].count.innerText = "0";
-            }
-            const counts = {};
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                if (buses[data.bus]) {
-                    counts[data.bus] = (counts[data.bus] || 0) + 1;
-                    const li = document.createElement('li');
-                    li.innerHTML = `<strong>${data.name ?? ''}</strong>
-                        <div class="time">${data.time ? new Date(data.time).toLocaleString() : ''}</div>`;
-                    buses[data.bus].list.appendChild(li);
-                }
-            });
-            for (let bus in counts) {
-                buses[bus].count.innerText = counts[bus];
-            }
+        const passengers = [];
+        passSnap.forEach(d => {
+          const data = d.data();
+          passengers.push({ code: data.code || d.id, name: data.name || '' });
         });
 
-        // ---- Upload passenger list for the selected bus (your original) ----
-        document.getElementById('excelFile').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file || !selectedBus) return;
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
 
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                const data = new Uint8Array(ev.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const sheetName = workbook.SheetNames[0];
-                const sheet = workbook.Sheets[sheetName];
-                const passengers = XLSX.utils.sheet_to_json(sheet);
+        // Page/layout constants: 6 per page (2 cols x 3 rows)
+        const pageW = 210, pageH = 297;
+        const margin = 10;
+        const cols = 2, rows = 3;
+        const cellW = (pageW - margin * 2) / cols;
+        const cellH = (pageH - margin * 2) / rows;
+        const qrSize = 60; // mm
+        const title = `${busName} — QR Codes`;
 
-                passengers.forEach(p => {
-                    if (p.code && p.name) {
-                        db.collection("passengers").doc(p.code).set({
-                            name: p.name,
-                            bus: selectedBus
-                        });
-                    }
-                });
-                alert(`Passenger list for ${selectedBus} uploaded successfully!`);
-                e.target.value = ""; // reset file input
-            };
-            reader.readAsArrayBuffer(file);
-        });
+        const scratch = document.getElementById('qrScratch');
 
-        // ---- PDF Generation (6 QR codes per A4 page) ----
-        async function generatePdfForBus(busName) {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+        function makeQrDataURL(text) {
+          return new Promise(resolve => {
+            const holder = document.createElement('div');
+            scratch.appendChild(holder);
+            new QRCode(holder, { text: text, width: 512, height: 512 });
+            setTimeout(() => {
+              let dataURL = null;
+              const canvas = holder.querySelector('canvas');
+              const img = holder.querySelector('img');
+              if (canvas) dataURL = canvas.toDataURL('image/png');
+              else if (img) dataURL = img.src;
+              scratch.removeChild(holder);
+              resolve(dataURL);
+            }, 0);
+          });
+        }
 
-            // Fetch passengers for this bus from Firestore
-            const snap = await db.collection("passengers").where("bus", "==", busName).get();
-            if (snap.empty) {
-                alert(`No passengers found for ${busName}.`);
-                return;
-            }
+        // Title on first page
+        doc.setFontSize(14);
+        doc.text(title, pageW / 2, 8, { align: 'center' });
 
-            const passengers = [];
-            snap.forEach(d => {
-                const data = d.data();
-                passengers.push({
-                    code: data.code || d.id,
-                    name: data.name || ''
-                });
-            });
-
-            // Layout settings: 6 per page (2 columns x 3 rows)
-            const pageW = 210, pageH = 297;
-            const margin = 10;
-            const cols = 2, rows = 3;
-            const cellW = (pageW - margin * 2) / cols;
-            const cellH = (pageH - margin * 2) / rows;
-            const qrSize = 60; // mm
-            const title = `${busName} — QR Codes`;
-
+        for (let i = 0; i < passengers.length; i++) {
+          if (i > 0 && i % 6 === 0) {
+            doc.addPage();
             doc.setFontSize(14);
             doc.text(title, pageW / 2, 8, { align: 'center' });
+          }
+          const pos = i % 6;
+          const row = Math.floor(pos / cols);
+          const col = pos % cols;
 
-            const scratch = document.getElementById('qrScratch');
+          const x0 = margin + col * cellW;
+          const y0 = margin + row * cellH + 12; // +12 for page title space
 
-            // Helper: make QR as dataURL using QRCode.js
-            function makeQrDataURL(text) {
-                return new Promise(resolve => {
-                    const holder = document.createElement('div');
-                    scratch.appendChild(holder);
-                    new QRCode(holder, { text: text, width: 512, height: 512 });
-                    // Give QRCode.js a tick to render
-                    setTimeout(() => {
-                        let dataURL = null;
-                        const canvas = holder.querySelector('canvas');
-                        const img = holder.querySelector('img');
-                        if (canvas) dataURL = canvas.toDataURL('image/png');
-                        else if (img) dataURL = img.src;
-                        scratch.removeChild(holder);
-                        resolve(dataURL);
-                    }, 0);
-                });
-            }
+          const qrX = x0 + (cellW - qrSize) / 2;
+          const qrY = y0 + (cellH - qrSize) / 2 - 6; // shift up for label
 
-            for (let i = 0; i < passengers.length; i++) {
-                // Add new page title every page except first (already has)
-                if (i > 0 && i % 6 === 0) {
-                    doc.addPage();
-                    doc.setFontSize(14);
-                    doc.text(title, pageW / 2, 8, { align: 'center' });
-                }
-                const pos = i % 6;
-                const row = Math.floor(pos / cols);
-                const col = pos % cols;
+          // QR content = passenger.code (doc id used by scanner)
+          const dataURL = await makeQrDataURL(passengers[i].code);
+          if (dataURL) doc.addImage(dataURL, 'PNG', qrX, qrY, qrSize, qrSize);
 
-                const x0 = margin + col * cellW;
-                const y0 = margin + row * cellH + 12; // +12 to leave room for page title
-
-                const qrX = x0 + (cellW - qrSize) / 2;
-                const qrY = y0 + (cellH - qrSize) / 2 - 6; // a little higher to fit label
-
-                // QR content = passenger.code (name printed as label)
-                const dataURL = await makeQrDataURL(passengers[i].code);
-
-                if (dataURL) {
-                    doc.addImage(dataURL, 'PNG', qrX, qrY, qrSize, qrSize);
-                }
-                // Label
-                doc.setFontSize(10);
-                doc.text(passengers[i].name || '', x0 + cellW / 2, qrY + qrSize + 6, { align: 'center' });
-
-                // Optional: draw cell border (comment out if not needed)
-                // doc.setDrawColor(200);
-                // doc.rect(x0, y0, cellW, cellH);
-            }
-
-            // Auto filename
-            const filename = `${busName}-qr-codes.pdf`;
-            doc.save(filename);
+          // Label
+          doc.setFontSize(10);
+          doc.text(passengers[i].name || '', x0 + cellW / 2, qrY + qrSize + 6, { align: 'center' });
         }
-    </script>
+
+        doc.save(`${busName}-qr-codes.pdf`);
+      } catch (err) {
+        console.error(err);
+        alert('❌ Failed to generate PDF: ' + err.message);
+      }
+    }
+
+    /* ========= Download Attendee Template (dynamic .xlsx) ========= */
+    document.getElementById('downloadTemplateBtn').addEventListener('click', () => {
+      const data = [
+        { CODE: "TCI01", NAME: "Sample Name", "BUS NAME": "Bus1" }
+      ];
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Attendees");
+      XLSX.writeFile(wb, "attendee_template.xlsx");
+    });
+  </script>
 </body>
 </html>
