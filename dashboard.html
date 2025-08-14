@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 
 <html>
@@ -145,7 +146,7 @@ function createBusSection(busName) {
             const data = doc.data();
             const wrapper = document.createElement('div');
             temp.appendChild(wrapper);
-            const qr = new QRCode(wrapper, { text: data.name, width: 512, height: 512 });
+            const qr = new QRCode(wrapper, { text: data.code, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.H });
             // Wait a tick for QRCode to render
             await new Promise(r => setTimeout(r, 10));
             const img = wrapper.querySelector('img') || wrapper.querySelector('canvas');
@@ -279,11 +280,7 @@ function createBusSection(busName) {
                 container.style.textAlign = "center";
 
                 const qrDiv = document.createElement('div');
-                new QRCode(qrDiv, {
-                    text: data.code,
-                    width: 100,
-                    height: 100
-                });
+                new QRCode(qrDiv, { text: data.code, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.H });
 
                 const label = document.createElement('div');
                 label.textContent = data.name;
