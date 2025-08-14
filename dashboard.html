@@ -1,90 +1,139 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bus Attendees Dashboard</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_AUTH_DOMAIN",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_STORAGE_BUCKET",
-            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-            appId: "YOUR_APP_ID"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        const busesContainer = document.getElementById('busesContainer');
-
-        const busNames = [
-            "Bus 1", "Bus 2", "Bus 3", "Bus 4", "Bus 5", "Bus 6",
-            "Bus 7", "Bus 8", "Bus 9", "Bus 10", "Bus 11", "Bus 12"
-        ];
-
-        busNames.forEach(busName => {
-            const busSection = document.createElement('div');
-            busSection.classList.add('bus-section');
-
-            const header = document.createElement('div');
-            header.classList.add('bus-header');
-            header.textContent = busName;
-
-            const attendeesList = document.createElement('ul');
-            attendeesList.classList.add('attendees-list');
-            attendeesList.style.display = 'none';
-
-            header.addEventListener('click', () => {
-                attendeesList.style.display = attendeesList.style.display === 'none' ? 'block' : 'none';
-            });
-
-            busSection.appendChild(header);
-            busSection.appendChild(attendeesList);
-            busesContainer.appendChild(busSection);
-
-            const q = query(collection(db, "buses", busName, "attendees"), orderBy("scannedAt", "desc"));
-            onSnapshot(q, (snapshot) => {
-                attendeesList.innerHTML = '';
-                snapshot.forEach(docSnap => {
-                    const data = docSnap.data();
-                    const li = document.createElement('li');
-                    li.textContent = `${data.name} (${data.code}) - ${data.scannedAt ? new Date(data.scannedAt.seconds * 1000).toLocaleString() : 'Not scanned'}`;
-                    attendeesList.appendChild(li);
-                });
-            });
-        });
-
-        // Expand/Collapse all buses
-        document.getElementById('toggleAllBtn').addEventListener('click', function () {
-            const allLists = document.querySelectorAll('.attendees-list');
-            const expand = this.textContent === 'Expand All';
-            allLists.forEach(list => list.style.display = expand ? 'block' : 'none');
-            this.textContent = expand ? 'Collapse All' : 'Expand All';
-        });
-
-        // ---- Download Excel Template ----
-        document.getElementById('downloadTemplateBtn').addEventListener('click', function () {
-            const wb = XLSX.utils.book_new();
-            const ws_data = [["code", "name"]]; // Header row
-            const ws = XLSX.utils.aoa_to_sheet(ws_data);
-            XLSX.utils.book_append_sheet(wb, ws, "Template");
-
-            XLSX.writeFile(wb, "passenger_template.xlsx");
-        });
-    </script>
+    <title>Bus Scanner Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007bff">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { text-align: center; }
+        .bus-container {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .bus {
+            border: 1px solid #ccc; border-radius: 8px; padding: 10px;
+            background-color: #f9f9f9; cursor: pointer; transition: background 0.2s;
+        }
+        .bus:hover { background-color: #e9e9e9; }
+        .bus h2 {
+            margin-top: 0; font-size: 18px; background: #333; color: white;
+            padding: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;
+        }
+        ul { list-style: none; padding: 0; margin-top: 5px; }
+        li { padding: 5px; border-bottom: 1px solid #ddd; }
+        .time { color: gray; font-size: 12px; }
+        .count-badge {
+            background: orange; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;
+        }
+        .back-btn { background-color: #28a745; color: white; padding: 10px 15px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px; }
+        .back-btn:hover { background-color: #1e7e34; }
+        input[type="file"] { display: none; }
+    </style>
 </head>
 <body>
-    <div id="topBar">
-        <button id="toggleAllBtn" class="toggle-btn">Expand All</button>
-        <button id="downloadTemplateBtn" class="action-btn">⬇️ Download Template</button>
+    <div style="text-align: left;">
+        <button class="back-btn" onclick="window.location.href='index.html'">🔙</button>
     </div>
-    <div id="busesContainer"></div>
+    <h1>🚌 Bus Boarding Dashboard</h1>
+
+    <!-- Hidden file input for uploads -->
+    <input type="file" id="excelFile" accept=".xlsx, .xls" />
+
+    <div class="bus-container" id="busContainer"></div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
+            authDomain: "bus-monitor-7195d.firebaseapp.com",
+            projectId: "bus-monitor-7195d",
+            storageBucket: "bus-monitor-7195d.firebasestorage.app",
+            messagingSenderId: "827570613765",
+            appId: "1:827570613765:web:5ed5f2635174e3379f366c"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        const busContainer = document.getElementById('busContainer');
+        const buses = {};
+        let selectedBus = null; // track which bus was clicked
+
+        function createBusSection(busName) {
+            const div = document.createElement('div');
+            div.className = 'bus';
+            div.innerHTML = `<h2>${busName} <span class="count-badge" id="${busName}Count">0</span></h2><ul id="${busName}List"></ul>`;
+            
+            // Click event for uploading list to this bus
+            div.addEventListener('click', () => {
+                selectedBus = busName;
+                document.getElementById('excelFile').click();
+            });
+
+            busContainer.appendChild(div);
+        }
+
+        for (let i = 1; i <= 12; i++) {
+            const busName = `Bus${i}`;
+            createBusSection(busName);
+            buses[busName] = {
+                list: document.getElementById(`${busName}List`),
+                count: document.getElementById(`${busName}Count`)
+            };
+        }
+
+        // Display scans
+        db.collection("scans").orderBy("time", "desc").onSnapshot(snapshot => {
+            for (let bus in buses) {
+                buses[bus].list.innerHTML = "";
+                buses[bus].count.innerText = "0";
+            }
+            const counts = {};
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (buses[data.bus]) {
+                    counts[data.bus] = (counts[data.bus] || 0) + 1;
+                    const li = document.createElement('li');
+                    li.innerHTML = `<strong>${data.name}</strong>      
+                        <div class="time">${new Date(data.time).toLocaleString()}</div>`;
+                    buses[data.bus].list.appendChild(li);
+                }
+            });
+            for (let bus in counts) {
+                buses[bus].count.innerText = counts[bus];
+            }
+        });
+
+        // Upload passenger list for the selected bus
+        document.getElementById('excelFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file || !selectedBus) return;
+
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const data = new Uint8Array(ev.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const passengers = XLSX.utils.sheet_to_json(sheet);
+
+                passengers.forEach(p => {
+                    if (p.code && p.name) {
+                        db.collection("passengers").doc(p.code).set({
+                            name: p.name,
+                            bus: selectedBus
+                        });
+                    }
+                });
+                alert(`Passenger list for ${selectedBus} uploaded successfully!`);
+                e.target.value = ""; // reset file input
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    </script>
 </body>
 </html>
