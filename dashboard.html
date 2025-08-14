@@ -1,213 +1,171 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Bus Scanner Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#007bff">
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1 { text-align: center; }
-        .bus-container {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-        }
-        .bus {
-            border: 1px solid #ccc; border-radius: 8px; padding: 10px;
-            background-color: #f9f9f9; cursor: pointer; transition: background 0.2s;
-        }
-        .bus:hover { background-color: #e9e9e9; }
-        .bus h2 {
-            margin-top: 0; font-size: 18px; background: #333; color: white;
-            padding: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;
-        }
-        ul { list-style: none; padding: 0; margin-top: 5px; }
-        li { padding: 5px; border-bottom: 1px solid #ddd; }
-        .time { color: gray; font-size: 12px; }
-        .count-badge {
-            background: orange; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;
-        }
-        .back-btn { background-color: #28a745; color: white; padding: 10px 15px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px; }
-        .back-btn:hover { background-color: #1e7e34; }
-        .controls { margin-bottom:10px; }
-        .action-btn { background:#007bff;color:white;padding:8px 12px;border:none;border-radius:5px;cursor:pointer; }
-        .action-btn.orange { background:orange; }
-        .hidden { display: none; }
-        #qrArea canvas { margin: 5px; }
-    </style>
+<meta charset="UTF-8">
+<title>Bus Boarding Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 10px;
+        background: #f8f9fa;
+    }
+    .bus-card {
+        background: white;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        overflow: hidden;
+    }
+    .bus-header {
+        padding: 10px;
+        background: #333;
+        color: white;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .bus-count {
+        background: orange;
+        color: white;
+        border-radius: 50%;
+        padding: 3px 8px;
+        font-size: 12px;
+    }
+    .bus-body {
+        display: none;
+        padding: 10px;
+    }
+    .btn {
+        display: inline-block;
+        padding: 8px 12px;
+        margin: 5px 5px 10px 0;
+        border-radius: 5px;
+        color: white;
+        cursor: pointer;
+    }
+    .btn-upload { background: #007bff; }
+    .btn-qr { background: #f39c12; }
+    .attendee {
+        padding: 5px 0;
+        border-bottom: 1px solid #ddd;
+    }
+    #generatedQRCodes {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .qr-wrapper {
+        text-align: center;
+    }
+    .qr-wrapper canvas {
+        display: block;
+        margin: auto;
+    }
+</style>
 </head>
 <body>
-    <div style="text-align: left;">
-        <button class="back-btn" onclick="window.location.href='index.html'">🔙</button>
-    </div>
-    <h1>🚌 Bus Boarding Dashboard</h1>
 
-    <!-- Hidden file input -->
-    <input type="file" id="excelFile" accept=".xlsx, .xls" style="display:none;" />
+<h2>🚌 Bus Boarding Dashboard</h2>
 
-    <div class="bus-container" id="busContainer"></div>
+<div id="busContainer"></div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- QRCode Library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+// Demo data - Replace with Firestore data fetch
+const buses = {
+    Bus1: ["Michael Reyes", "Sarah Tan"],
+    Bus2: ["Jessa Saavedra"],
+    Bus3: [],
+    Bus4: [],
+};
 
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
-            authDomain: "bus-monitor-7195d.firebaseapp.com",
-            projectId: "bus-monitor-7195d",
-            storageBucket: "bus-monitor-7195d.firebasestorage.app",
-            messagingSenderId: "827570613765",
-            appId: "1:827570613765:web:5ed5f2635174e3379f366c"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+function createBusCard(busName, attendees) {
+    const card = document.createElement("div");
+    card.className = "bus-card";
 
-        const busContainer = document.getElementById('busContainer');
-        const buses = {};
-        let selectedBus = null;
+    const header = document.createElement("div");
+    header.className = "bus-header";
+    header.innerHTML = `<span>${busName}</span> <span class="bus-count">${attendees.length}</span>`;
+    card.appendChild(header);
 
-        function createBusSection(busName) {
-            const div = document.createElement('div');
-            div.className = 'bus';
-            
-            div.innerHTML = `
-                <h2>${busName} <span class="count-badge" id="${busName}Count">0</span></h2>
-                <div class="hidden" id="${busName}Panel">
-                    <div class="controls">
-                        <button class="action-btn" onclick="uploadAttendees('${busName}')">📤 Upload Attendees</button>
-                        <button class="action-btn orange" onclick="generateQRCodes('${busName}')">📄 Generate QR Codes</button>
-                    </div>
-                    <ul id="${busName}List"></ul>
-                    <div id="${busName}QR" class="hidden">
-                        <h3>Generated QR Codes</h3>
-                        <div id="${busName}QRCodes"></div>
-                    </div>
-                </div>
-            `;
-            
-            div.querySelector('h2').addEventListener('click', () => toggleBusPanel(busName));
-            busContainer.appendChild(div);
+    const body = document.createElement("div");
+    body.className = "bus-body";
 
-            buses[busName] = {
-                list: document.getElementById(`${busName}List`),
-                count: document.getElementById(`${busName}Count`)
-            };
+    // Buttons
+    const uploadBtn = document.createElement("div");
+    uploadBtn.className = "btn btn-upload";
+    uploadBtn.textContent = "Upload Attendees";
+    body.appendChild(uploadBtn);
+
+    const qrBtn = document.createElement("div");
+    qrBtn.className = "btn btn-qr";
+    qrBtn.textContent = "Generate QR Codes";
+    body.appendChild(qrBtn);
+
+    // Attendee list
+    attendees.forEach(name => {
+        const div = document.createElement("div");
+        div.className = "attendee";
+        div.textContent = name;
+        body.appendChild(div);
+    });
+
+    // QR Container
+    const qrContainer = document.createElement("div");
+    qrContainer.id = `qr-${busName}`;
+    qrContainer.className = "generatedQRCodes";
+    body.appendChild(qrContainer);
+
+    card.appendChild(body);
+
+    // Toggle behavior
+    header.addEventListener("click", () => {
+        const isVisible = body.style.display === "block";
+        document.querySelectorAll(".bus-body").forEach(b => b.style.display = "none");
+        if (!isVisible) {
+            body.style.display = "block";
         }
+    });
 
-        function toggleBusPanel(busName) {
-            const panel = document.getElementById(`${busName}Panel`);
-
-            // If this is the same bus and already open, close it
-            if (selectedBus === busName && !panel.classList.contains('hidden')) {
-                panel.classList.add('hidden');
-                selectedBus = null;
-                return;
-            }
-
-            // Hide all other panels
-            document.querySelectorAll('.bus div[id$="Panel"]').forEach(p => p.classList.add('hidden'));
-
-            // Show the clicked one
-            panel.classList.remove('hidden');
-            selectedBus = busName;
-        }
-
-        for (let i = 1; i <= 12; i++) {
-            const busName = `Bus${i}`;
-            createBusSection(busName);
-        }
-
-        // Real-time updates for scanned attendees
-        db.collection("scans").orderBy("time", "desc").onSnapshot(snapshot => {
-            for (let bus in buses) {
-                buses[bus].list.innerHTML = "";
-                buses[bus].count.innerText = "0";
-            }
-            const counts = {};
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                if (buses[data.bus]) {
-                    counts[data.bus] = (counts[data.bus] || 0) + 1;
-                    const li = document.createElement('li');
-                    li.innerHTML = `<strong>${data.name}</strong>
-                        <div class="time">${new Date(data.time).toLocaleString()}</div>`;
-                    buses[data.bus].list.appendChild(li);
-                }
+    // QR Button Click
+    qrBtn.addEventListener("click", () => {
+        qrContainer.innerHTML = "";
+        attendees.forEach(name => {
+            const wrapper = document.createElement("div");
+            wrapper.className = "qr-wrapper";
+            const qrDiv = document.createElement("div");
+            new QRCode(qrDiv, {
+                text: name,
+                width: 80,
+                height: 80
             });
-            for (let bus in counts) {
-                buses[bus].count.innerText = counts[bus];
-            }
+            const label = document.createElement("div");
+            label.textContent = name;
+            label.style.fontSize = "12px";
+            wrapper.appendChild(qrDiv);
+            wrapper.appendChild(label);
+            qrContainer.appendChild(wrapper);
         });
+    });
 
-        // Upload attendees function
-        function uploadAttendees(busName) {
-            selectedBus = busName;
-            document.getElementById('excelFile').click();
-        }
+    return card;
+}
 
-        // Handle file upload
-        document.getElementById('excelFile').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file || !selectedBus) return;
+function renderBuses() {
+    const container = document.getElementById("busContainer");
+    container.innerHTML = "";
+    for (let bus in buses) {
+        container.appendChild(createBusCard(bus, buses[bus]));
+    }
+}
 
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                const data = new Uint8Array(ev.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const sheetName = workbook.SheetNames[0];
-                const sheet = workbook.Sheets[sheetName];
-                const passengers = XLSX.utils.sheet_to_json(sheet);
+renderBuses();
+</script>
 
-                passengers.forEach(p => {
-                    if (p.code && p.name) {
-                        db.collection("passengers").doc(p.code).set({
-                            name: p.name,
-                            bus: selectedBus
-                        });
-                    }
-                });
-                alert(`Passenger list for ${selectedBus} uploaded successfully!`);
-                e.target.value = "";
-            };
-            reader.readAsArrayBuffer(file);
-        });
-
-        // Generate QR codes
-        async function generateQRCodes(busName) {
-            const qrContainer = document.getElementById(`${busName}QRCodes`);
-            const qrWrapper = document.getElementById(`${busName}QR`);
-            qrContainer.innerHTML = "";
-            qrWrapper.classList.remove('hidden');
-
-            const snapshot = await db.collection("passengers").where("bus", "==", busName).get();
-            if (snapshot.empty) {
-                alert("No passengers found for this bus.");
-                return;
-            }
-
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                const container = document.createElement('div');
-                container.style.display = "inline-block";
-                container.style.textAlign = "center";
-
-                const qrDiv = document.createElement('div');
-                new QRCode(qrDiv, {
-                    text: data.code,
-                    width: 100,
-                    height: 100
-                });
-
-                const label = document.createElement('div');
-                label.textContent = data.name;
-
-                container.appendChild(qrDiv);
-                container.appendChild(label);
-                qrContainer.appendChild(container);
-            });
-        }
-    </script>
 </body>
 </html>
