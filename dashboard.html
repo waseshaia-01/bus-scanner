@@ -1,30 +1,42 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Bus QR Scanner</title>
+    <title>Bus Boarding Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#007bff">
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; text-align: center; }
-        #reader { width: 100%; max-width: 400px; margin: auto; }
-        select, button { padding: 10px; margin: 5px 0; width: 100%; font-size: 16px; }
-        #status { margin-top: 10px; font-weight: bold; }
-        .dashboard-btn {
-            background-color: #007bff;
-            color: white; border: none;
-            border-radius: 5px; cursor: pointer;
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f4; }
+        h2 { text-align: center; }
+        .controls { text-align: center; margin-bottom: 20px; }
+        select, input, button {
+            padding: 8px;
+            margin: 5px;
+            font-size: 14px;
         }
-        .dashboard-btn:hover { background-color: #0056b3; }
+        table { border-collapse: collapse; width: 100%; background: white; }
+        th, td { padding: 8px; border: 1px solid #ccc; }
+        th { background: #007bff; color: white; }
+        .btn { cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        .btn:hover { background: #0056b3; }
+        .btn-danger { background: red; }
+        .btn-danger:hover { background: darkred; }
+        #status { margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h2>Bus QR Scanner</h2>
-    <button class="dashboard-btn" onclick="window.location.href='dashboard.html'">📊 View Bus Dashboard</button>
 
-    <label for="busSelect">Select Bus:</label>
-    <select id="busSelect">
-        <option value="">-- Select Bus --</option>
+<h2>Bus Boarding Dashboard</h2>
+
+<div class="controls">
+    <!-- Upload Excel -->
+    <input type="file" id="fileInput" accept=".xlsx" />
+    <button class="btn" onclick="uploadList()">📤 Upload List</button>
+    <button class="btn" onclick="downloadTemplate()">📄 Download Template</button>
+    <button class="btn" onclick="window.location.href='index.html'">📷 Open Scanner</button>
+
+    <br>
+    <label for="busFilter">Select Bus:</label>
+    <select id="busFilter" onchange="loadScans()">
+        <option value="">All</option>
         <option value="Bus1">Bus 1</option>
         <option value="Bus2">Bus 2</option>
         <option value="Bus3">Bus 3</option>
@@ -38,95 +50,117 @@
         <option value="Bus11">Bus 11</option>
         <option value="Bus12">Bus 12</option>
     </select>
+</div>
 
-    <div id="reader"></div>
-    <div id="status"></div>
+<div id="status"></div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+<table id="scanTable">
+    <thead>
+        <tr>
+            <th>Passenger Name</th>
+            <th>Bus</th>
+            <th>Uploaded List</th>
+            <th>Scan Time</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
 
-    <script>
-        // Firebase config
-        const firebaseConfig = {
-            apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
-            authDomain: "bus-monitor-7195d.firebaseapp.com",
-            projectId: "bus-monitor-7195d",
-            storageBucket: "bus-monitor-7195d.firebasestorage.app",
-            messagingSenderId: "827570613765",
-            appId: "1:827570613765:web:5ed5f2635174e3379f366c"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-        const busSelect = document.getElementById("busSelect");
-        const statusDiv = document.getElementById("status");
+<script>
+    // Firebase Config
+    const firebaseConfig = {
+        apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
+        authDomain: "bus-monitor-7195d.firebaseapp.com",
+        projectId: "bus-monitor-7195d",
+        storageBucket: "bus-monitor-7195d.firebasestorage.app",
+        messagingSenderId: "827570613765",
+        appId: "1:827570613765:web:5ed5f2635174e3379f366c"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-        async function logScan(qrMessage) {
-            const bus = busSelect.value;
-            if (!bus) {
-                alert("Please select a bus first!");
+    const scanTableBody = document.querySelector("#scanTable tbody");
+    const busFilter = document.getElementById("busFilter");
+    const statusDiv = document.getElementById("status");
+
+    // Download Template
+    function downloadTemplate() {
+        const wb = XLSX.utils.book_new();
+        const ws_data = [["Name", "Bus", "UploadedListName", "Code"]];
+        ws_data.push(["John Doe", "Bus1", "Sample List", "QRCODE123"]);
+        const ws = XLSX.utils.aoa_to_sheet(ws_data);
+        XLSX.utils.book_append_sheet(wb, ws, "Template");
+        XLSX.writeFile(wb, "Bus_Attendee_Template.xlsx");
+    }
+
+    // Upload Excel List
+    async function uploadList() {
+        const file = document.getElementById("fileInput").files[0];
+        if (!file) return alert("Please select an Excel file first.");
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: "array" });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+            const headers = rows.shift();
+            const nameIndex = headers.indexOf("Name");
+            const busIndex = headers.indexOf("Bus");
+            const listNameIndex = headers.indexOf("UploadedListName");
+            const codeIndex = headers.indexOf("Code");
+
+            if (nameIndex === -1 || busIndex === -1 || codeIndex === -1) {
+                alert("Template incorrect. Please use the provided template.");
                 return;
             }
 
-            try {
-                // Check passenger in uploaded list
-                const passengerRef = await db.collection("passengers").doc(qrMessage).get();
-                if (!passengerRef.exists) {
-                    statusDiv.style.color = "red";
-                    statusDiv.innerText = "❌ Passenger not in uploaded list.";
-                    return;
-                }
-                const passenger = passengerRef.data();
-
-                if (passenger.bus !== bus) {
-                    statusDiv.style.color = "red";
-                    statusDiv.innerText = `❌ ${passenger.name} is assigned to ${passenger.bus}, not ${bus}.`;
-                    return;
-                }
-
-                // Check if already scanned
-                const existingScan = await db.collection("scans")
-                    .where("bus", "==", bus)
-                    .where("code", "==", qrMessage)
-                    .get();
-
-                if (!existingScan.empty) {
-                    statusDiv.style.color = "orange";
-                    statusDiv.innerText = `⚠️ ${passenger.name} already scanned for ${bus}.`;
-                    return;
-                }
-
-                // Save scan
-                await db.collection("scans").add({
-                    bus,
-                    code: qrMessage,
-                    name: passenger.name,
-                    uploadedListName: passenger.uploadedListName || "Unknown List",
-                    time: new Date().toISOString(),
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            const batch = db.batch();
+            rows.forEach(row => {
+                if (!row[nameIndex] || !row[busIndex] || !row[codeIndex]) return;
+                const docRef = db.collection("passengers").doc(row[codeIndex].toString());
+                batch.set(docRef, {
+                    name: row[nameIndex],
+                    bus: row[busIndex],
+                    uploadedListName: row[listNameIndex] || sheetName
                 });
+            });
+            await batch.commit();
+            alert("List uploaded successfully!");
+        };
+        reader.readAsArrayBuffer(file);
+    }
 
-                statusDiv.style.color = "green";
-                statusDiv.innerText = `✅ ${passenger.name} boarded ${bus}`;
-            } catch (err) {
-                statusDiv.style.color = "red";
-                statusDiv.innerText = "❌ Error: " + err.message;
-            }
+    // Load Scans Live
+    function loadScans() {
+        let query = db.collection("scans").orderBy("timestamp", "asc");
+        if (busFilter.value) {
+            query = query.where("bus", "==", busFilter.value);
         }
 
-        function onScanSuccess(decodedText) {
-            logScan(decodedText);
-        }
-
-        const html5QrCode = new Html5Qrcode("reader");
-        html5QrCode.start(
-            { facingMode: "environment" },
-            { fps: 10, qrbox: 250 },
-            onScanSuccess
-        ).catch(err => {
-            console.error("Unable to start scanning:", err);
+        query.onSnapshot(snapshot => {
+            scanTableBody.innerHTML = "";
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const row = `<tr>
+                    <td>${data.name}</td>
+                    <td>${data.bus}</td>
+                    <td>${data.uploadedListName || "Unknown"}</td>
+                    <td>${data.time ? new Date(data.time).toLocaleString() : ""}</td>
+                </tr>`;
+                scanTableBody.innerHTML += row;
+            });
         });
-    </script>
+    }
+
+    loadScans();
+</script>
+
 </body>
 </html>
