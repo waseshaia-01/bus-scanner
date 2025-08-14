@@ -70,24 +70,24 @@
             }
 
             try {
-                // Check if passenger exists under this bus
-                const passengerRef = await db
-                    .collection("buses").doc(bus)
-                    .collection("passengers").doc(qrMessage)
-                    .get();
-
+                // Check if passenger exists in uploaded list for that bus
+                const passengerRef = await db.collection("passengers").doc(qrMessage).get();
                 if (!passengerRef.exists) {
                     statusDiv.style.color = "red";
-                    statusDiv.innerText = "❌ Passenger not registered for " + bus;
+                    statusDiv.innerText = "❌ Passenger not in uploaded list.";
+                    return;
+                }
+                const passenger = passengerRef.data();
+
+                if (passenger.bus !== bus) {
+                    statusDiv.style.color = "red";
+                    statusDiv.innerText = `❌ ${passenger.name} is assigned to ${passenger.bus}, not ${bus}.`;
                     return;
                 }
 
-                const passenger = passengerRef.data();
-
                 // Check if already scanned for this bus
-                const existingScan = await db
-                    .collection("buses").doc(bus)
-                    .collection("scans")
+                const existingScan = await db.collection("scans")
+                    .where("bus", "==", bus)
                     .where("code", "==", qrMessage)
                     .get();
 
@@ -97,13 +97,15 @@
                     return;
                 }
 
-                // Save scan
-                await db.collection("buses").doc(bus)
-                    .collection("scans").add({
-                        code: qrMessage,
-                        name: passenger.name,
-                        time: new Date().toISOString()
-                    });
+                // Save scan with date/time
+                await db.collection("scans").add({
+                    bus,
+                    code: qrMessage,
+                    name: passenger.name,
+                    uploadedListName: passenger.uploadedListName || "Unknown List",
+                    time: new Date().toISOString(),
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
 
                 statusDiv.style.color = "green";
                 statusDiv.innerText = `✅ ${passenger.name} boarded ${bus}`;
