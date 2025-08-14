@@ -1,0 +1,238 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Bus Scanner Dashboard — Persistent QR</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#007bff" />
+  <style>
+    :root { --gap: 14px; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; background:#f7f7fb; color:#111; }
+    h1 { text-align:center; margin-bottom: 10px; }
+    .topbar { display:flex; flex-wrap:wrap; gap: var(--gap); justify-content:center; align-items: center; margin-bottom: 20px; }
+    select, textarea, input[type=file], button { padding:10px 12px; border-radius: 12px; border:1px solid #d0d0e0; background:#fff; }
+    button { cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    button.primary { background:#0d6efd; color:#fff; border-color:#0d6efd; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--gap); }
+    .card { background:#fff; border:1px solid #e7e7f0; border-radius: 16px; padding:16px; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .muted { color:#666; font-size: 13px; }
+    .success { color:#138a36; }
+    .error { color:#b00020; }
+    .scroll { max-height: 180px; overflow:auto; border:1px dashed #e0e0ee; padding:10px; border-radius:12px; background:#fafafe; }
+    .flex { display:flex; gap:10px; align-items:center; }
+    .spacer { height: 10px; }
+    .hidden { display:none; }
+    .badge { background:#eef2ff; color:#3730a3; border-radius:999px; padding:3px 8px; font-size:12px; }
+    .linklike { color:#0d6efd; text-decoration:underline; background:none; border:none; padding:0; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <h1>🚌 Bus Scanner Dashboard — Persistent QR</h1>
+
+  <div class="topbar">
+    <div class="flex">
+      <label for="busSelect"><strong>Bus:</strong></label>
+      <select id="busSelect">
+        <option value="Bus01">Bus 01</option>
+        <option value="Bus02">Bus 02</option>
+        <option value="Bus03">Bus 03</option>
+        <option value="Bus04">Bus 04</option>
+        <option value="Bus05">Bus 05</option>
+        <option value="Bus06">Bus 06</option>
+        <option value="Bus07">Bus 07</option>
+        <option value="Bus08">Bus 08</option>
+        <option value="Bus09">Bus 09</option>
+        <option value="Bus10">Bus 10</option>
+        <option value="Bus11">Bus 11</option>
+        <option value="Bus12">Bus 12</option>
+      </select>
+    </div>
+    <button id="openScanner" class="linklike" title="Open Scanner">Open Scanner</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>1) Upload or Paste Attendees</h3>
+      <div class="row">
+        <input type="file" id="fileInput" accept=".txt,.csv" />
+        <button id="loadSample" type="button">Load Sample</button>
+      </div>
+      <div class="spacer"></div>
+      <textarea id="attendeeText" rows="6" style="width:100%" placeholder="One name per line"></textarea>
+      <div class="muted">Tip: You can upload a .csv/.txt or paste names here. Duplicate names keep the same QR (persistent).</div>
+      <div class="spacer"></div>
+      <div class="row">
+        <button id="syncBtn" class="primary">Save to Firestore</button>
+        <span id="syncStatus" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>2) Generate & Download QR Codes (256px, High EC)</h3>
+      <div class="row">
+        <button id="downloadAll" class="primary">Download All QRs (ZIP)</button>
+        <span class="muted">QR text is the document ID (persistent).</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="scroll" id="previewList"></div>
+    </div>
+  </div>
+
+  <!-- Firebase + libs -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+
+  <script>
+    // === Firebase ===
+    const firebaseConfig = {
+            apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
+            authDomain: "bus-monitor-7195d.firebaseapp.com",
+            projectId: "bus-monitor-7195d",
+            storageBucket: "bus-monitor-7195d.firebasestorage.app",
+            messagingSenderId: "827570613765",
+            appId: "1:827570613765:web:5ed5f2635174e3379f366c"
+        };
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // === Persistent code helpers (localStorage) ===
+    const STORAGE_KEY = 'persistentCodes_v1';
+    function loadMap() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } }
+    function saveMap(map) { localStorage.setItem(STORAGE_KEY, JSON.stringify(map)); }
+    function codeFor(name) {
+      const key = name.trim().toLowerCase();
+      const map = loadMap();
+      if (map[key]) return map[key];
+      const code = 'QR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      map[key] = code;
+      saveMap(map);
+      return code;
+    }
+
+    // === UI elements ===
+    const busSelect = document.getElementById('busSelect');
+    const fileInput = document.getElementById('fileInput');
+    const attendeeText = document.getElementById('attendeeText');
+    const syncBtn = document.getElementById('syncBtn');
+    const syncStatus = document.getElementById('syncStatus');
+    const previewList = document.getElementById('previewList');
+    const downloadAll = document.getElementById('downloadAll');
+    const openScanner = document.getElementById('openScanner');
+
+    openScanner.addEventListener('click', () => { window.location.href = 'index.html'; });
+
+    // Sample loader
+    document.getElementById('loadSample').onclick = () => {
+      attendeeText.value = ["Alice Santos","Ben Cruz","Carla Dela Cruz","Dino Reyes","Ella Tan"].join("\n");
+    };
+
+    // File upload
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      attendeeText.value = text.split(/\r?\n/).filter(Boolean).join("\n");
+    });
+
+    // Parse names
+    function getNames() {
+      return attendeeText.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    }
+
+    // Sync to Firestore: buses/{{bus}}/attendees/{{qrCode}} {{ name, qr, createdAt }}
+    syncBtn.addEventListener('click', async () => {
+      const bus = busSelect.value;
+      const names = getNames();
+      if (!names.length) { syncStatus.textContent = "No names."; syncStatus.className = "muted error"; return; }
+      syncStatus.textContent = "Syncing...";
+      syncStatus.className = "muted";
+
+      const batch = db.batch();
+      const now = firebase.firestore.FieldValue.serverTimestamp();
+      for (const name of names) {
+        const qr = codeFor(name);
+        const ref = db.collection('buses').doc(bus).collection('attendees').doc(qr);
+        batch.set(ref, { name, qr, bus, createdAt: now }, { merge: true });
+      }
+      try {
+        await batch.commit();
+        syncStatus.textContent = "✅ Synced " + names.length + " attendees to " + bus;
+        syncStatus.className = "muted success";
+        renderPreview();
+      } catch (e) {
+        syncStatus.textContent = "❌ " + e.message;
+        syncStatus.className = "muted error";
+      }
+    });
+
+    // Render preview list with live Firestore data
+    async function renderPreview() {
+      const bus = busSelect.value;
+      previewList.innerHTML = "Loading...";
+      const snap = await db.collection('buses').doc(bus).collection('attendees').orderBy('name').get();
+      if (snap.empty) { previewList.textContent = "No attendees in this bus."; return; }
+      const frag = document.createDocumentFragment();
+      snap.forEach(doc => {
+        const data = doc.data();
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.justifyContent = 'space-between';
+        row.innerHTML = `<span><span class="badge">${bus}</span> <strong>${data.name}</strong> <span class="muted">(${data.qr || doc.id})</span></span>`;
+        frag.appendChild(row);
+      });
+      previewList.innerHTML = "";
+      previewList.appendChild(frag);
+    }
+    busSelect.addEventListener('change', renderPreview);
+    window.addEventListener('load', renderPreview);
+
+    // Generate all QR codes into a ZIP (256, H)
+    downloadAll.addEventListener('click', async () => {
+      const bus = busSelect.value;
+      const snap = await db.collection('buses').doc(bus).collection('attendees').get();
+      if (snap.empty) { alert("No attendees found for " + bus); return; }
+      const zip = new JSZip();
+      // Hidden temp container
+      const temp = document.createElement('div');
+      temp.style.position='fixed'; temp.style.left='-9999px'; document.body.appendChild(temp);
+
+      async function makePng(text) {
+        return new Promise(resolve => {
+          const holder = document.createElement('div');
+          temp.appendChild(holder);
+          const q = new QRCode(holder, {
+            text, width:256, height:256, correctLevel: QRCode.CorrectLevel.H
+          });
+          setTimeout(() => {
+            const canvas = holder.querySelector('canvas');
+            const dataUrl = canvas.toDataURL('image/png');
+            resolve(dataUrl);
+          }, 120);
+        });
+      }
+
+      let count = 0;
+      for (const doc of snap.docs) {
+        const data = doc.data();
+        const qrText = data.qr || doc.id;
+        const pngDataUrl = await makePng(qrText);
+        const base64 = pngDataUrl.split(',')[1];
+        const safeName = (data.name || 'Unknown').replace(/[^a-z0-9_\- ]/gi, '_');
+        zip.file(`${safeName} - ${qrText}.png`, base64, { base64: true });
+        count++;
+      }
+      if (count === 0) { alert("No QR images generated."); return; }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      saveAs(blob, `QRs_${bus}.zip`);
+      temp.remove();
+    });
+  </script>
+</body>
+</html>
