@@ -1,11 +1,13 @@
+
 <!DOCTYPE html>
+
 <html>
 <head>
-    <title>Bus Scanner Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#007bff">
-    <style>
+<title>Bus Scanner Dashboard</title>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<link href="manifest.json" rel="manifest"/>
+<meta content="#007bff" name="theme-color"/>
+<style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         h1 { text-align: center; }
         .bus-container {
@@ -35,34 +37,28 @@
     </style>
 </head>
 <body>
-    <div style="text-align: left;">
-        <button class="back-btn" onclick="window.location.href='index.html'">🔙</button>
-    </div>
-    <h1>🚌 Bus Boarding Dashboard</h1>
-
-    <!-- Control Buttons -->
-    <div id="busControls" style="display:none; margin-bottom:15px;">
-        <button id="uploadBtn" class="action-btn">📤 Upload Attendees</button>
-        <button id="generateQRBtn" class="action-btn orange">📄 Generate QR Codes</button>
-    </div>
-
-    <!-- Hidden file input -->
-    <input type="file" id="excelFile" accept=".xlsx, .xls" style="display:none;" />
-
-    <div class="bus-container" id="busContainer"></div>
-
-    <!-- QR Code display area -->
-    <div id="qrArea" style="display:none; margin-top:20px;">
-        <h3>Generated QR Codes</h3>
-        <div id="qrCodes"></div>
-    </div>
-
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-
-    <script>
+<div style="text-align: left;">
+<button class="back-btn" onclick="window.location.href='index.html'">🔙</button>
+</div>
+<div style="text-align:left; margin: 10px 0;"><button class="action-btn" id="downloadTemplateBtn">⬇️ Download CSV Template</button></div><h1>🚌 Bus Boarding Dashboard</h1>
+<!-- Control Buttons -->
+<div id="busControls" style="display:none; margin-bottom:15px;">
+<button class="action-btn" id="uploadBtn">📤 Upload Attendees</button>
+<button class="action-btn orange" id="generateQRBtn">📄 Generate QR Codes</button>
+</div>
+<!-- Hidden file input -->
+<input accept=".xlsx, .xls" id="excelFile" style="display:none;" type="file"/>
+<div class="bus-container" id="busContainer"></div>
+<!-- QR Code display area -->
+<div id="qrArea" style="display:none; margin-top:20px;">
+<h3>Generated QR Codes</h3>
+<div id="qrCodes"></div>
+</div>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script><script>
         const firebaseConfig = {
             apiKey: "AIzaSyDSCJUwOe_MxqS_8SPfEmhZ4p_MOigXKyY",
             authDomain: "bus-monitor-7195d.firebaseapp.com",
@@ -78,20 +74,125 @@
         const buses = {};
         let selectedBus = null;
 
-        function createBusSection(busName) {
-            const div = document.createElement('div');
-            div.className = 'bus';
-            div.innerHTML = `<h2>${busName} <span class="count-badge" id="${busName}Count">0</span></h2>
-                             <ul id="${busName}List"></ul>`;
-            
-            div.addEventListener('click', () => {
-                selectedBus = busName;
-                document.getElementById('busControls').style.display = 'block';
-            });
+        
+function createBusSection(busName) {
+    const div = document.createElement('div');
+    div.className = 'bus';
+    div.innerHTML = `
+        <h2>${busName} <span class="count-badge" id="${busName}Count">0</span></h2>
+        <div style="display:flex; gap:8px; margin:8px 0; flex-wrap:wrap;">
+            <input type="file" id="${busName}File" accept=".csv,.xlsx,.xls" style="display:none;" />
+            <button class="action-btn" id="${busName}Upload">📤 Upload Attendees</button>
+            <button class="action-btn orange" id="${busName}DownloadQR">📄 Download QR Codes</button>
+        </div>
+        <div style="font-weight:bold; margin-top:6px;">Attendees</div>
+        <table style="width:100%; border-collapse: collapse;" id="${busName}AttTable">
+            <thead>
+                <tr>
+                    <th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Name</th>
+                    <th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Scan Timestamp</th>
+                </tr>
+            </thead>
+            <tbody id="${busName}AttBody">
+                <tr><td colspan="2" style="padding:8px; color:#777;">No attendees yet.</td></tr>
+            </tbody>
+        </table>
+        <div style="font-weight:bold; margin-top:12px;">Recent Scans</div>
+        <ul id="${busName}List"></ul>
+    `;
 
-            busContainer.appendChild(div);
+    // Select bus on click to keep legacy controls working (non-breaking)
+    div.addEventListener('click', () => {
+        selectedBus = busName;
+        const ctrl = document.getElementById('busControls');
+        if (ctrl) ctrl.style.display = 'block';
+    });
+
+    busContainer.appendChild(div);
+
+    // Wire up per-bus upload
+    const uploadBtn = div.querySelector('#' + `${busName}Upload`);
+    const fileInput = div.querySelector('#' + `${busName}File`);
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const names = await readNamesFromFile(file);
+        if (!names.length) { alert("No names found in file. Make sure the first column header is 'Name'."); return; }
+        // Write to Firestore under buses/{busName}/attendees/{docId}
+        const batch = db.batch();
+        const attCol = db.collection('buses').doc(busName).collection('attendees');
+        names.forEach(n => {
+            const docRef = attCol.doc(n);
+            batch.set(docRef, { name: n, timestamp: null }, { merge: true });
+        });
+        await batch.commit();
+        alert(`Uploaded ${names.length} attendees for ${busName}.`);
+        fileInput.value = '';
+    });
+
+    // Wire up per-bus QR download
+    const dlBtn = div.querySelector('#' + `${busName}DownloadQR`);
+    dlBtn.addEventListener('click', async () => {
+        // Fetch attendees
+        const snap = await db.collection('buses').doc(busName).collection('attendees').get();
+        if (snap.empty) { alert("No attendees to generate QR codes for."); return; }
+        const zip = new JSZip();
+        // Temporary container for QR generation
+        const temp = document.createElement('div');
+        temp.style.position = 'fixed'; temp.style.left = '-9999px'; document.body.appendChild(temp);
+        for (const doc of snap.docs) {
+            const data = doc.data();
+            const wrapper = document.createElement('div');
+            temp.appendChild(wrapper);
+            const qr = new QRCode(wrapper, { text: data.name, width: 512, height: 512 });
+            // Wait a tick for QRCode to render
+            await new Promise(r => setTimeout(r, 10));
+            const img = wrapper.querySelector('img') || wrapper.querySelector('canvas');
+            let dataURL;
+            if (img && img.tagName === 'IMG') {
+                dataURL = img.src;
+            } else if (img && img.tagName === 'CANVAS') {
+                dataURL = img.toDataURL('image/png');
+            }
+            if (dataURL) {
+                const base64 = dataURL.split(',')[1];
+                zip.file(`${sanitizeFilename(data.name)}.png`, base64, {base64:true});
+            }
+            wrapper.remove();
         }
+        document.body.removeChild(temp);
+        const blob = await zip.generateAsync({type:'blob'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${busName}-QR-Codes.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    });
 
+    // Live attendees table
+    db.collection('buses').doc(busName).collection('attendees').orderBy('name').onSnapshot(s => {
+        const tbody = document.getElementById(`${busName}AttBody`);
+        tbody.innerHTML = '';
+        if (s.empty) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td colspan="2" style="padding:8px; color:#777;">No attendees yet.</td>`;
+            tbody.appendChild(tr);
+            return;
+        }
+        s.forEach(doc => {
+            const d = doc.data();
+            const tr = document.createElement('tr');
+            const ts = d.timestamp ? new Date(d.timestamp).toLocaleString() : '';
+            tr.innerHTML = `
+                <td style="padding:6px; border-bottom:1px solid #eee;">${escapeHtml(d.name)}</td>
+                <td style="padding:6px; border-bottom:1px solid #eee;">${ts}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    });
+}
         for (let i = 1; i <= 12; i++) {
             const busName = `Bus${i}`;
             createBusSection(busName);
@@ -192,6 +293,59 @@
                 qrCodesDiv.appendChild(container);
             });
         });
-    </script>
+    
+
+async function readNamesFromFile(file) {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (ext === 'csv') {
+        const text = await file.text();
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const rows = lines.map(l => l.split(',').map(c => c.trim()));
+        // Expect header "Name" in first cell
+        const startIdx = rows[0] && rows[0][0].toLowerCase() === 'name' ? 1 : 0;
+        const names = [];
+        for (let i = startIdx; i < rows.length; i++) {
+            if (rows[i][0]) names.push(rows[i][0]);
+        }
+        return Array.from(new Set(names)); // de-duplicate
+    } else if (ext === 'xlsx' || ext === 'xls') {
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const firstSheet = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[firstSheet];
+        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        const startIdx = json[0] && String(json[0][0]).toLowerCase() === 'name' ? 1 : 0;
+        const names = [];
+        for (let i = startIdx; i < json.length; i++) {
+            if (json[i][0]) names.push(String(json[i][0]).trim());
+        }
+        return Array.from(new Set(names));
+    } else {
+        alert("Unsupported file type. Please upload a .csv or .xlsx file.");
+        return [];
+    }
+}
+
+function sanitizeFilename(name) {
+    return name.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'qr';
+}
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (m) {
+        return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]);
+    });
+}
+
+// Top-left template download
+document.getElementById('downloadTemplateBtn').addEventListener('click', () => {
+    const csv = "Name\nJohn Doe\nJane Smith\n";
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'attendee-template.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+});
+</script>
 </body>
 </html>
