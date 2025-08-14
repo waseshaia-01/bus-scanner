@@ -70,20 +70,21 @@
             }
 
             try {
-                // Check if passenger exists in uploaded list for that bus
-                const passengerRef = await db.collection("passengers").doc(qrMessage).get();
+                // ✅ Check inside buses/{bus}/attendees/{qrMessage}
+                const passengerRef = await db
+                    .collection("buses")
+                    .doc(bus)
+                    .collection("attendees")
+                    .doc(qrMessage)
+                    .get();
+
                 if (!passengerRef.exists) {
                     statusDiv.style.color = "red";
                     statusDiv.innerText = "❌ Passenger not in uploaded list.";
                     return;
                 }
-                const passenger = passengerRef.data();
 
-                if (passenger.bus !== bus) {
-                    statusDiv.style.color = "red";
-                    statusDiv.innerText = `❌ ${passenger.name} is assigned to ${passenger.bus}, not ${bus}.`;
-                    return;
-                }
+                const passenger = passengerRef.data();
 
                 // Check if already scanned for this bus
                 const existingScan = await db.collection("scans")
