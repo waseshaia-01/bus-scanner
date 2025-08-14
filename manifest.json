@@ -1,6 +1,0 @@
-{
-  "name": "Bus QR Scanner",
-  "short_name": "BusScanner",
-  "start_url": "./index.html",
-  "display": "standalone"
-}
