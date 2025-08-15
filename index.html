@@ -1,109 +1,124 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
   <title>Bus QR Scanner</title>
-  <link rel="manifest" href="manifest.json">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-  :root{--bg:#0b1220;--card:#131a2a;--muted:#98a2b3;--text:#e6e9f0;--accent:#3b82f6;--green:#22c55e;--red:#ef4444;--amber:#f59e0b}
-  *{box-sizing:border-box}html,body{height:100%}body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,Noto Sans;background:linear-gradient(180deg,#0b1220 0%, #0e1629 100%);color:var(--text)}
-  .container{max-width:1100px;margin:0 auto;padding:20px}header{display:flex;align-items:center;gap:12px;padding:16px 0 8px 0}.title{font-size:20px;font-weight:700;letter-spacing:.3px}
-  .btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:white;border:none;border-radius:12px;padding:10px 14px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(59,130,246,.3);transition:transform .08s ease,box-shadow .2s ease}
-  .btn.secondary{background:#2b3550}.btn.ghost{background:transparent;border:1px solid #2b3550}.btn:active{transform:translateY(1px)}
-  .card{background:var(--card);border:1px solid #202842;border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(7,12,24,.35)}
-  .grid{display:grid;gap:16px}.grid.cols-3{grid-template-columns:repeat(3,1fr)}
-  .muted{color:var(--muted)}.pill{padding:4px 10px;border-radius:999px;background:#1b2440;color:#bcd;display:inline-flex;gap:8px;align-items:center}
-  #video{width:100%;border-radius:16px;border:1px solid #243047;background:#0e1629}
-  .status{padding:10px 12px;border-radius:12px;border:1px solid #243047;background:#0f182b}.status.ok{border-color:#14532d}.status.warn{border-color:#7c2d12}
-  .tile{background:#111827;border:1px solid #1f2937;border-radius:16px;padding:14px;cursor:pointer;transition:border-color .2s ease,transform .08s ease}
-  .tile:hover{border-color:#334155}.tile:active{transform:translateY(1px)}
-  .busgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.list{border-top:1px dashed #2b3550;margin-top:8px;padding-top:8px;max-height:340px;overflow:auto}
-  .list .item{display:grid;grid-template-columns:1fr 160px 120px;gap:8px;padding:8px;border-bottom:1px dotted #223;align-items:center}.hidden{display:none}
-  .small{padding:8px 10px;border-radius:10px;font-size:14px}.danger{background:var(--red)}.success{background:var(--green)}.warn{background:var(--amber)}
-</style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 10px; }
+    video { width: 100%; max-width: 500px; border: 1px solid #ccc; }
+    #status { margin-top: 10px; font-weight: bold; }
+  </style>
 </head>
 <body>
-<div class="container">
-  <header>
-    <button class="btn ghost" onclick="location.href='dashboard.html'">📊 View Dashboard</button>
-    <div class="title">Bus QR Scanner</div>
-    <div class="pill"><span>Camera Live</span></div>
-  </header>
+  <h1>Bus QR Scanner</h1>
+  <select id="busSelect"></select>
+  <video id="preview" autoplay playsinline></video>
+  <p id="status">Initializing scanner...</p>
 
-  <div class="card">
-    <div class="muted">Select Bus</div>
-    <select id="busSelect">
-      <option value="Bus01">Bus 1</option><option value="Bus02">Bus 2</option><option value="Bus03">Bus 3</option><option value="Bus04">Bus 4</option><option value="Bus05">Bus 5</option><option value="Bus06">Bus 6</option><option value="Bus07">Bus 7</option><option value="Bus08">Bus 8</option><option value="Bus09">Bus 9</option><option value="Bus10">Bus 10</option><option value="Bus11">Bus 11</option><option value="Bus12">Bus 12</option>
-    </select>
-    <div style="height:10px"></div>
-    <video id="video" playsinline></video>
-    <div style="height:10px"></div>
-    <div id="status" class="status">Initializing scanner…</div>
-  </div>
+  <script src="https://unpkg.com/@zxing/library@0.18.6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-  <footer class="muted" style="margin-top:12px">Tip: QR must contain <b>Code</b> only (eg <code>TCI001</code>). Scanner checks Firestore at <code>buses/BusXX/attendees/Code</code>.</footer>
-</div>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCheUCoG-3z1OPkRAApPNO0S4AaBWW-WAc",
+      authDomain: "bus-monitor-c6973.firebaseapp.com",
+      projectId: "bus-monitor-c6973",
+      storageBucket: "bus-monitor-c6973.firebasestorage.app",
+      messagingSenderId: "858489773302",
+      appId: "1:858489773302:web:21872c4b9df745c497a0d7"
+    };
 
-<!-- Older ZXing for compatibility -->
-<script src="https://unpkg.com/@zxing/library@0.18.6"></script>
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  
-const firebaseConfig = {
-  apiKey: "AIzaSyCheUCoG-3z1OPkRAApPNO0S4AaBWW-WAc",
-  authDomain: "bus-monitor-c6973.firebaseapp.com",
-  projectId: "bus-monitor-c6973",
-  storageBucket: "bus-monitor-c6973.firebasestorage.app",
-  messagingSenderId: "858489773302",
-  appId: "1:858489773302:web:21872c4b9df745c497a0d7"
-};
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  if('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('service-worker.js');
-  }
-
-  const statusEl = document.getElementById('status');
-  const video = document.getElementById('video');
-  const busSelect = document.getElementById('busSelect');
-
-  function setStatus(t,k='info'){statusEl.textContent=t;statusEl.classList.remove('ok','warn');if(k==='ok')statusEl.classList.add('ok');if(k==='warn')statusEl.classList.add('warn')}
-
-  async function markBoarded(busId, code) {
-    const ref = doc(db, 'buses', busId, 'attendees', code);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) return setStatus('❌ Not in uploaded list','warn');
-    const data = snap.data();
-    if (data.boardedAt) return setStatus('⚠️ Already boarded','warn');
-    await updateDoc(ref, { boardedAt: new Date().toISOString() });
-    setStatus('✅ Boarding success', 'ok');
-  }
-
-  const codeReader = new ZXing.BrowserQRCodeReader();
-  async function start() {
-    try {
-      const devices = await codeReader.listVideoInputDevices();
-      if (!devices.length) throw new Error('No camera found');
-      let chosen = devices[devices.length-1].deviceId;
-      for (const d of devices) { if (/back|rear/i.test(d.label)) chosen = d.deviceId; }
-      await codeReader.decodeFromVideoDevice(chosen, 'video', (result, err) => {
-        if (result) {
-          const text = result.getText().trim();
-          const busId = busSelect.value;
-          if (window.__last !== text) { window.__last = text; markBoarded(busId, text); }
-          setTimeout(()=>window.__last=null, 1200);
-        }
-      });
-      setStatus('Scanner ready');
-    } catch(e) {
-      setStatus('Camera error: '+ e.message, 'warn');
+    async function markBoarded(busId, code) {
+      const ref = doc(db, "buses", busId, "attendees", code);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        document.getElementById("status").textContent = "Not in uploaded list";
+        return;
+      }
+      const data = snap.data();
+      if (data.boardedAt) {
+        document.getElementById("status").textContent = "Already boarded";
+      } else {
+        await updateDoc(ref, { boardedAt: new Date().toISOString() });
+        document.getElementById("status").textContent = "Boarding success";
+      }
     }
-  }
-  start();
-</script>
+
+    // Populate bus dropdown
+    for (let i = 1; i <= 12; i++) {
+      const opt = document.createElement("option");
+      opt.value = `Bus${String(i).padStart(2, "0")}`;
+      opt.textContent = `Bus ${String(i).padStart(2, "0")}`;
+      document.getElementById("busSelect").appendChild(opt);
+    }
+
+    const video = document.getElementById('preview');
+    const status = document.getElementById('status');
+    const codeReader = new ZXing.BrowserQRCodeReader();
+    let fallbackActive = false;
+
+    function startZXing() {
+      codeReader.listVideoInputDevices()
+        .then(videoInputDevices => {
+          let deviceId = videoInputDevices.length > 1
+            ? videoInputDevices[videoInputDevices.length - 1].deviceId
+            : videoInputDevices[0].deviceId;
+          codeReader.decodeFromVideoDevice(deviceId, 'preview', (result, err) => {
+            if (result) {
+              const busId = document.getElementById("busSelect").value;
+              markBoarded(busId, result.text.trim());
+            }
+          });
+          status.textContent = "Scanner ready";
+        })
+        .catch(err => {
+          console.error(err);
+          startFallback();
+        });
+    }
+
+    function startFallback() {
+      fallbackActive = true;
+      status.textContent = "Fallback scanner active";
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }
+      }).then(stream => {
+        video.srcObject = stream;
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        setInterval(() => {
+          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imgData.data, canvas.width, canvas.height);
+            if (code) {
+              const busId = document.getElementById("busSelect").value;
+              markBoarded(busId, code.data.trim());
+            }
+          }
+        }, 500);
+      }).catch(err => {
+        console.error("Camera error in fallback:", err);
+        status.textContent = "Camera access error";
+      });
+    }
+
+    // Start ZXing, but trigger fallback after 3s if no stream
+    startZXing();
+    setTimeout(() => {
+      if (!fallbackActive && video.srcObject == null) {
+        console.warn("ZXing did not start, switching to fallback");
+        startFallback();
+      }
+    }, 3000);
+  </script>
 </body>
 </html>
