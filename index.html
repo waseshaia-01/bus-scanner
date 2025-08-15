@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bus QR Scanner</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+  :root{
+    --bg:#0b1220;
+    --card:#131a2a;
+    --muted:#98a2b3;
+    --text:#e6e9f0;
+    --accent:#3b82f6;
+    --green:#22c55e;
+    --red:#ef4444;
+    --amber:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, Noto Sans, "Apple Color Emoji","Segoe UI Emoji";
+    background:linear-gradient(180deg,#0b1220 0%, #0e1629 100%);
+    color:var(--text);
+  }
+  a{color:var(--accent);text-decoration:none}
+  .container{max-width:1100px;margin:0 auto;padding:20px}
+  header{
+    display:flex;align-items:center;gap:12px;padding:16px 0 8px 0;
+  }
+  .title{font-size:20px;font-weight:700;letter-spacing:.3px}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    background:var(--accent);color:white;border:none;border-radius:12px;
+    padding:10px 14px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(59,130,246,.3);
+    transition:transform .08s ease,box-shadow .2s ease;
+  }
+  .btn.secondary{background:#2b3550}
+  .btn.ghost{background:transparent;border:1px solid #2b3550}
+  .btn:active{transform:translateY(1px)}
+  .card{
+    background:var(--card);border:1px solid #202842;border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(7,12,24,.35);
+  }
+  .grid{display:grid;gap:16px}
+  .grid.cols-2{grid-template-columns:1fr 1fr}
+  .grid.cols-3{grid-template-columns:repeat(3,1fr)}
+  .grid.cols-4{grid-template-columns:repeat(4,1fr)}
+  .muted{color:var(--muted)}
+  .stat{font-size:28px;font-weight:800}
+  .pill{padding:4px 10px;border-radius:999px;background:#1b2440;color:#bcd;display:inline-flex;gap:8px;align-items:center}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .spacer{height:12px}
+  .tile{
+    background:#111827;border:1px solid #1f2937;border-radius:16px;padding:14px;cursor:pointer;
+    transition:border-color .2s ease,transform .08s ease;
+  }
+  .tile:hover{border-color:#334155}
+  .tile:active{transform:translateY(1px)}
+  .tile .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .tile .count{font-size:24px;font-weight:800}
+  .hidden{display:none}
+  .list{border-top:1px dashed #2b3550;margin-top:8px;padding-top:8px;max-height:340px;overflow:auto}
+  .list .item{display:grid;grid-template-columns:1fr 160px 120px;gap:8px;padding:8px;border-bottom:1px dotted #223;align-items:center}
+  .list .item:last-child{border-bottom:none}
+  .badge{padding:4px 8px;border-radius:10px;font-size:12px;border:1px solid #2b3550;color:#d7dde9;background:#141b2c}
+  select, input[type="file"]{background:#101826;border:1px solid #243047;border-radius:10px;color:var(--text);padding:10px}
+  #video{width:100%;border-radius:16px;border:1px solid #243047;background:#0e1629}
+  .status{padding:10px 12px;border-radius:12px;border:1px solid #243047;background:#0f182b}
+  .status.ok{border-color:#14532d}
+  .status.warn{border-color:#7c2d12}
+  footer{opacity:.75;font-size:12px;margin-top:24px}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <button class="btn ghost" onclick="location.href='dashboard.html'">📊 View Dashboard</button>
+    <div class="title">Bus QR Scanner</div>
+    <div class="pill"><span>Camera Live</span></div>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label for="busSelect" class="muted">Select Bus</label>
+      <select id="busSelect">
+        <option value="Bus01">Bus 1</option>
+        <option value="Bus02">Bus 2</option>
+        <option value="Bus03">Bus 3</option>
+        <option value="Bus04">Bus 4</option>
+        <option value="Bus05">Bus 5</option>
+        <option value="Bus06">Bus 6</option>
+        <option value="Bus07">Bus 7</option>
+        <option value="Bus08">Bus 8</option>
+        <option value="Bus09">Bus 9</option>
+        <option value="Bus10">Bus 10</option>
+        <option value="Bus11">Bus 11</option>
+        <option value="Bus12">Bus 12</option>
+      </select>
+      <div class="pill"><span id="busStats">Boarded: 0</span></div>
+    </div>
+    <div class="spacer"></div>
+    <video id="video" playsinline></video>
+    <div style="height:10px"></div>
+    <div id="status" class="status">Ready to scan…</div>
+  </div>
+
+  <footer>Tip: QR should encode the exact <b>Code</b> (e.g., <code>TCI001</code>). The scanner checks Firestore in <b>buses &rarr; BusXX &rarr; attendees &rarr; Code</b>.</footer>
+</div>
+
+<script src="https://unpkg.com/@zxing/library@0.20.0"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, updateDoc, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  
+const firebaseConfig = {
+  apiKey: "AIzaSyCheUCoG-3z1OPkRAApPNO0S4AaBWW-WAc",
+  authDomain: "bus-monitor-c6973.firebaseapp.com",
+  projectId: "bus-monitor-c6973",
+  storageBucket: "bus-monitor-c6973.firebasestorage.app",
+  messagingSenderId: "858489773302",
+  appId: "1:858489773302:web:21872c4b9df745c497a0d7"
+};
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  if('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js');
+  }
+
+  const statusEl = document.getElementById('status');
+  const video = document.getElementById('video');
+  const busSelect = document.getElementById('busSelect');
+  const busStats = document.getElementById('busStats');
+
+  // Live boarded count for current bus
+  let unsub = null;
+  function listenBus(busId) {
+    if (unsub) unsub();
+    const q = query(collection(db, 'buses', busId, 'attendees'));
+    unsub = onSnapshot(q, (snap) => {
+      let boarded = 0;
+      snap.forEach(d => { if (d.data().boardedAt) boarded++; });
+      busStats.textContent = `Boarded: ${boarded}`;
+    });
+  }
+  listenBus(busSelect.value);
+  busSelect.addEventListener('change', () => listenBus(busSelect.value));
+
+  function setStatus(text, kind='info') {
+    statusEl.textContent = text;
+    statusEl.classList.remove('ok','warn');
+    if (kind==='ok') statusEl.classList.add('ok');
+    if (kind==='warn') statusEl.classList.add('warn');
+  }
+
+  async function handleCode(raw) {
+    const code = (raw || '').trim();
+    const busId = busSelect.value;
+    if (!code) return;
+    const ref = doc(db, 'buses', busId, 'attendees', code);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      setStatus('❌ Not in uploaded list', 'warn');
+      return;
+    }
+    const data = snap.data();
+    if (data.boardedAt) {
+      setStatus('⚠️ Already boarded', 'warn');
+      return;
+    }
+    await updateDoc(ref, { boardedAt: new Date().toISOString() });
+    setStatus('✅ Boarding success', 'ok');
+  }
+
+  // ZXing scanner
+  const codeReader = new ZXing.BrowserMultiFormatReader();
+  async function start() {
+    try {
+      const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+      const deviceId = devices?.[0]?.deviceId;
+      await codeReader.decodeFromVideoDevice(deviceId, 'video', (result, err) => {
+        if (result) handleCode(result.getText());
+      });
+      setStatus('Scanner ready');
+    } catch(e) {
+      setStatus('Camera error: ' + e.message, 'warn');
+    }
+  }
+  start();
+</script>
+</body>
+</html>
