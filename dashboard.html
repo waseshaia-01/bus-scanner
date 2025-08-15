@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bus Dashboard</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+  :root{--bg:#0b1220;--card:#131a2a;--muted:#98a2b3;--text:#e6e9f0;--accent:#3b82f6;--green:#22c55e;--red:#ef4444;--amber:#f59e0b}
+  *{box-sizing:border-box}html,body{height:100%}body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,Noto Sans;background:linear-gradient(180deg,#0b1220 0%, #0e1629 100%);color:var(--text)}
+  .container{max-width:1100px;margin:0 auto;padding:20px}header{display:flex;align-items:center;gap:12px;padding:16px 0 8px 0}.title{font-size:20px;font-weight:700;letter-spacing:.3px}
+  .btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:white;border:none;border-radius:12px;padding:10px 14px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(59,130,246,.3);transition:transform .08s ease,box-shadow .2s ease}
+  .btn.secondary{background:#2b3550}.btn.ghost{background:transparent;border:1px solid #2b3550}.btn:active{transform:translateY(1px)}
+  .card{background:var(--card);border:1px solid #202842;border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(7,12,24,.35)}
+  .grid{display:grid;gap:16px}.grid.cols-3{grid-template-columns:repeat(3,1fr)}
+  .muted{color:var(--muted)}.pill{padding:4px 10px;border-radius:999px;background:#1b2440;color:#bcd;display:inline-flex;gap:8px;align-items:center}
+  #video{width:100%;border-radius:16px;border:1px solid #243047;background:#0e1629}
+  .status{padding:10px 12px;border-radius:12px;border:1px solid #243047;background:#0f182b}.status.ok{border-color:#14532d}.status.warn{border-color:#7c2d12}
+  .tile{background:#111827;border:1px solid #1f2937;border-radius:16px;padding:14px;cursor:pointer;transition:border-color .2s ease,transform .08s ease}
+  .tile:hover{border-color:#334155}.tile:active{transform:translateY(1px)}
+  .busgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.list{border-top:1px dashed #2b3550;margin-top:8px;padding-top:8px;max-height:340px;overflow:auto}
+  .list .item{display:grid;grid-template-columns:1fr 160px 120px;gap:8px;padding:8px;border-bottom:1px dotted #223;align-items:center}.hidden{display:none}
+  .small{padding:8px 10px;border-radius:10px;font-size:14px}.danger{background:var(--red)}.success{background:var(--green)}.warn{background:var(--amber)}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <button class="btn ghost" onclick="location.href='index.html'">⬅️ Back to Scanner</button>
+    <div class="title">Bus Dashboard</div>
+  </header>
+
+  <div class="card">
+    <div class="muted">CSV (Code,Name,Bus)</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+      <input type="file" id="csvFile" accept=".csv" />
+      <button class="btn" id="uploadBtn">Upload CSV → Firestore</button>
+      <button class="btn secondary" id="downloadTpl">📄 Download Template</button>
+    </div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="grid cols-3">
+    <div class="card"><div class="muted">Total Attendees</div><div class="title" id="statTotal">0</div></div>
+    <div class="card"><div class="muted">Total Boarded</div><div class="title" id="statBoarded">0</div></div>
+    <div class="card"><div class="muted">Pending</div><div class="title" id="statPending">0</div></div>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <div class="busgrid" id="busGrid"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, query, orderBy, writeBatch, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  
+const firebaseConfig = {
+  apiKey: "AIzaSyCheUCoG-3z1OPkRAApPNO0S4AaBWW-WAc",
+  authDomain: "bus-monitor-c6973.firebaseapp.com",
+  projectId: "bus-monitor-c6973",
+  storageBucket: "bus-monitor-c6973.firebasestorage.app",
+  messagingSenderId: "858489773302",
+  appId: "1:858489773302:web:21872c4b9df745c497a0d7"
+};
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js');
+
+  const BUS_IDS = Array.from({length:12}, (_,i)=> 'Bus' + String(i+1).padStart(2,'0'));
+  const busGrid = document.getElementById('busGrid');
+  const statTotal = document.getElementById('statTotal');
+  const statBoarded = document.getElementById('statBoarded');
+  const statPending = document.getElementById('statPending');
+
+  async function ensureBusDocs() {
+    for (const id of BUS_IDS) {
+      await setDoc(doc(db,'buses',id),{ name: id.replace('Bus','Bus ') },{ merge:true });
+    }
+  }
+  ensureBusDocs();
+
+  for (const id of BUS_IDS) {
+    const el = document.createElement('div');
+    el.className = 'tile';
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div><b>${id.replace('Bus','Bus ')}</b></div>
+        <div id="count-${id}" class="title">0</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn small success" data-action="genpdf" data-bus="${id}">QR CODE DOWNLOAD</button>
+        <button class="btn small warn" data-action="deleteAll" data-bus="${id}">DELETE ALL</button>
+        <button class="btn small secondary" data-action="toggle" data-bus="${id}">Expand/Collapse</button>
+      </div>
+      <div class="list hidden" id="list-${id}"></div>
+    `;
+    busGrid.appendChild(el);
+  }
+
+  BUS_IDS.forEach(id => {
+    onSnapshot(collection(db,'buses',id,'attendees'), snap => {
+      const list = document.getElementById('list-'+id);
+      list.innerHTML = '';
+      let boarded = 0;
+      snap.forEach(d => {
+        const a = d.data(); if (a.boardedAt) boarded++;
+        const row = document.createElement('div');
+        row.className = 'item';
+        row.innerHTML = `<div>${a.name} <span class="muted">(${a.code})</span></div>
+                         <div>${a.boardedAt? new Date(a.boardedAt).toLocaleString():'—'}</div>
+                         <div style="text-align:right"><button class="btn small danger" data-action="deleteOne" data-bus="${id}" data-code="${a.code}">Delete</button></div>`;
+        list.appendChild(row);
+      });
+      document.getElementById('count-'+id).textContent = boarded;
+      computeTotals();
+    });
+  });
+
+  async function computeTotals() {
+    let t=0,b=0;
+    for (const id of BUS_IDS) {
+      const snap = await getDocs(collection(db,'buses',id,'attendees'));
+      t += snap.size;
+      snap.forEach(d => { if (d.data().boardedAt) b++; });
+    }
+    statTotal.textContent = t; statBoarded.textContent = b; statPending.textContent = Math.max(0,t-b);
+  }
+
+  busGrid.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button'); if(!btn) return;
+    const action = btn.dataset.action; const busId = btn.dataset.bus;
+    if (action==='toggle') document.getElementById('list-'+busId).classList.toggle('hidden');
+    if (action==='deleteAll') {
+      if (!confirm('Delete ALL attendees for '+busId+'?')) return;
+      const col = collection(db,'buses',busId,'attendees');
+      const snap = await getDocs(col);
+      const batch = writeBatch(db);
+      snap.forEach(d => batch.delete(doc(db,'buses',busId,'attendees',d.id)));
+      await batch.commit(); alert('Deleted.');
+    }
+    if (action==='deleteOne') {
+      const code = btn.dataset.code;
+      if (!confirm('Delete '+code+'?')) return;
+      await deleteDoc(doc(db,'buses',busId,'attendees',code));
+    }
+    if (action==='genpdf') await generateEventPassPDF(busId);
+  });
+
+  document.getElementById('uploadBtn').addEventListener('click', async () => {
+    const f = document.getElementById('csvFile').files[0];
+    if (!f) return alert('Choose a CSV first');
+    const text = await f.text();
+    const rows = text.trim().split(/\r?\n/).map(r => r.split(','));
+    const headers = rows.shift().map(h=>h.trim().toLowerCase());
+    const idx = { code: headers.indexOf('code'), name: headers.indexOf('name'), bus: headers.indexOf('bus') };
+    if (idx.code<0||idx.name<0||idx.bus<0) return alert('CSV must have Code,Name,Bus headers');
+    let n=0;
+    for (const r of rows) {
+      const code=(r[idx.code]||'').trim(), name=(r[idx.name]||'').trim(), bus=(r[idx.bus]||'').trim();
+      if (!code||!name||!bus) continue;
+      await setDoc(doc(db,'buses',bus,'attendees',code),{ code,name,busId:bus,boardedAt:null });
+      await setDoc(doc(db,'buses',bus),{ name: bus.replace('Bus','Bus ') },{ merge:true });
+      n++;
+    }
+    alert('Uploaded '+n+' attendees.');
+  });
+
+  document.getElementById('downloadTpl').addEventListener('click', () => {
+    const csv = 'Code,Name,Bus\nTCI001,Jessa Saavedra,Bus01\nTCI002,Rose Carmel Burato,Bus01\n';
+    const blob = new Blob([csv], {type:'text/csv'}); const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='attendees_template.csv'; a.click();
+  });
+
+  async function generateEventPassPDF(busId) {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+    const colCount = 2, rowCount = 3, cardW = 50, cardH = 100, marginX = 15, marginY = 15;
+    const gapX = (210 - marginX*2 - cardW*colCount) / (colCount-1);
+    const gapY = (297 - marginY*2 - cardH*rowCount) / (rowCount-1);
+    const snap = await getDocs(query(collection(db,'buses',busId,'attendees'), orderBy('name')));
+    const attendees = snap.docs.map(d => d.data());
+    let i=0;
+    for (const a of attendees) {
+      if (i>0 && i%(colCount*rowCount)==0) pdf.addPage();
+      const slot=i%(colCount*rowCount), col=slot%colCount, row=Math.floor(slot/colCount);
+      const x = marginX + col*(cardW+gapX), y = marginY + row*(cardH+gapY);
+      pdf.setDrawColor(40,60,100); pdf.roundedRect(x,y,cardW,cardH,4,4);
+      pdf.setFont('helvetica','bold'); pdf.setFontSize(12); pdf.text('EVENT PASS', x+4, y+8);
+      pdf.setFont('helvetica','bold'); pdf.text('EVENT', x+4, y+16); pdf.setFont('helvetica','normal'); pdf.text('TCI Family Day 2025', x+4, y+22); pdf.setFontSize(12); pdf.text('September 7, 2025  |  8:00 AM – 4:00 PM', x+4, y+28);
+      pdf.setFont('helvetica','bold'); pdf.setFontSize(12); pdf.text('VENUE', x+4, y+36); pdf.setFont('helvetica','normal'); pdf.text('Hidden Valley Mountain and Wavepool Resort', x+4, y+42, {maxWidth: cardW-8}); pdf.text('Pinamungahan, Cebu', x+4, y+48);
+      pdf.setFont('helvetica','bold'); pdf.setFontSize(12); pdf.text((a.name||'').toUpperCase(), x+4, y+58, {maxWidth: cardW-8});
+      pdf.setFont('helvetica','normal'); pdf.setFontSize(10); pdf.text('BUS: '+ busId.replace('Bus','Bus '), x+4, y+64);
+      const qr = qrcode(10,'H'); qr.addData(a.code); qr.make();
+      const size=45, count=qr.getModuleCount(), scale=Math.ceil(size/count);
+      const c=document.createElement('canvas'); c.width=c.height=count*scale; const ctx=c.getContext('2d');
+      for(let r=0;r<count;r++) for(let cc=0;cc<count;cc++){ ctx.fillStyle=qr.isDark(r,cc)?'#000':'#fff'; ctx.fillRect(cc*scale,r*scale,scale,scale); }
+      pdf.addImage(c.toDataURL('image/png'),'PNG', x+(cardW-size)/2, y+70, size, size);
+      i++;
+    }
+    pdf.save(busId+'_EventPasses.pdf');
+  }
+</script>
+</body>
+</html>
